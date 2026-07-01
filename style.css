@@ -41,12 +41,17 @@ html, body {
   left: 0;
   right: 0;
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  font-size: 1rem;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.95rem;
   font-weight: 600;
   pointer-events: none;
+}
+
+.hud-row {
+  display: flex;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
@@ -58,8 +63,7 @@ html, body {
 }
 
 #healthbar {
-  flex: 1;
-  min-width: 120px;
+  width: 100%;
   height: 16px;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -72,6 +76,77 @@ html, body {
   width: 100%;
   background: linear-gradient(90deg, #4ade80, #22c55e);
   transition: width 0.15s ease, background 0.15s ease;
+}
+
+#xpbar {
+  width: 100%;
+  height: 8px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+#xpfill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #a78bfa, #7c3aed);
+  transition: width 0.1s ease;
+}
+
+/* Karty ulepszeń */
+.cards-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 420px;
+}
+
+.upgrade-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: #1e293b;
+  border: 2px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.upgrade-card:hover,
+.upgrade-card:active {
+  border-color: var(--accent);
+  background: #24344a;
+  transform: translateY(-2px);
+}
+
+.upgrade-card img {
+  width: 46px;
+  height: 46px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.upgrade-card .u-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.upgrade-card .u-desc {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+
+.upgrade-card .u-lvl {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 /* Joystick */

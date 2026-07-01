@@ -12,10 +12,14 @@
 
     <!-- HUD -->
     <div id="hud">
-      <div class="hud-item">⏱️ <span id="time">0.0</span>s</div>
-      <div class="hud-item">💀 <span id="kills">0</span></div>
-      <div class="hud-item">🌊 Fala <span id="wave">1</span></div>
+      <div class="hud-row">
+        <div class="hud-item">⏱️ <span id="time">0.0</span>s</div>
+        <div class="hud-item">💀 <span id="kills">0</span></div>
+        <div class="hud-item">🌊 Fala <span id="wave">1</span></div>
+        <div class="hud-item">⭐ Lvl <span id="level">1</span></div>
+      </div>
       <div id="healthbar"><div id="healthfill"></div></div>
+      <div id="xpbar"><div id="xpfill"></div></div>
     </div>
 
     <!-- Wirtualny joystick (telefon) -->
@@ -35,6 +39,13 @@
         <strong>Telefon:</strong> joystick po lewej stronie ekranu
       </p>
       <button id="startBtn" class="btn">Graj</button>
+    </div>
+
+    <!-- Ekran wyboru ulepszenia (level up) -->
+    <div id="levelup" class="overlay hidden">
+      <h1>⬆️ Poziom <span id="lvlNum">2</span></h1>
+      <p class="desc">Wybierz ulepszenie:</p>
+      <div id="cards" class="cards-choice"></div>
     </div>
 
     <!-- Ekran końca gry -->
