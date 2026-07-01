@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Arena Survivor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game">
+    <canvas id="canvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-item">⏱️ <span id="time">0.0</span>s</div>
+      <div class="hud-item">💀 <span id="kills">0</span></div>
+      <div class="hud-item">🌊 Fala <span id="wave">1</span></div>
+      <div id="healthbar"><div id="healthfill"></div></div>
+    </div>
+
+    <!-- Wirtualny joystick (telefon) -->
+    <div id="joystick" class="hidden">
+      <div id="stick"></div>
+    </div>
+
+    <!-- Ekran startowy -->
+    <div id="start" class="overlay">
+      <h1>⚔️ Arena Survivor</h1>
+      <p class="desc">
+        Przetrwaj jak najdłużej! Twój miecz tnie automatycznie —
+        Ty tylko unikaj zombie.
+      </p>
+      <p class="controls">
+        <strong>Komputer:</strong> WASD / strzałki<br />
+        <strong>Telefon:</strong> joystick po lewej stronie ekranu
+      </p>
+      <button id="startBtn" class="btn">Graj</button>
+    </div>
+
+    <!-- Ekran końca gry -->
+    <div id="gameover" class="overlay hidden">
+      <h1>💀 Koniec gry</h1>
+      <p class="result">
+        Przetrwałeś <strong><span id="finalTime">0</span>s</strong><br />
+        Pokonane zombie: <strong><span id="finalKills">0</span></strong>
+      </p>
+      <p id="best" class="best"></p>
+      <button id="restartBtn" class="btn">Zagraj ponownie</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
