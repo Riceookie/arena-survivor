@@ -214,7 +214,7 @@ function newState() {
     freeze: 0,
     glevel: 1,
     wave: 1,
-    wavesInLevel: 3,
+    wavesInLevel: 2,
     toSpawn: 0,
     spawnTimer: 0,
     waveDelay: 0,
@@ -474,7 +474,7 @@ function startWave() {
     s.event = ["slime", "swarm", "night"][Math.floor(Math.random() * 3)];
     s.banner = { text: EVENT_NAME[s.event], t: 2.4, max: 2.4 };
   }
-  s.toSpawn = 5 + s.wave * 2 + s.glevel * 3;
+  s.toSpawn = 4 + s.wave + s.glevel * 2;
   if (s.event === "swarm") s.toSpawn = Math.round(s.toSpawn * 1.8);
   s.spawnTimer = 0.3;
 }
@@ -482,7 +482,7 @@ function nextLevel() {
   const s = state;
   s.glevel++;
   s.wave = 1;
-  s.wavesInLevel = 2 + s.glevel;
+  s.wavesInLevel = Math.min(5, 1 + s.glevel);
   s.portal = null;
   s.enemies = [];
   s.enemyBullets = [];
@@ -1040,7 +1040,7 @@ function update(dt) {
     a.arm.cd -= dt;
     if (a.arm.cd <= 0 && t) {
       const ang = s.armAng;
-      const sx = p.x + Math.cos(ang) * (p.r + 20), sy = p.y + Math.sin(ang) * (p.r + 20);
+      const sx = p.x + Math.cos(ang) * (p.r + 52), sy = p.y + Math.sin(ang) * (p.r + 52);
       s.slashes.push({ x: sx, y: sy, a: ang, life: 0.22, max: 0.22, r: 40 + a.arm.lvl * 4, dmg: 3 + a.arm.lvl * 2, hit: new Set() });
       a.arm.cd = Math.max(0.5, 1.1 - a.arm.lvl * 0.08);
       sfx("swipe");
@@ -1291,7 +1291,7 @@ function update(dt) {
   s.pickups = s.pickups.filter((it) => {
     if (it.life <= 0) return false;
     if (Math.hypot(it.x - p.x, it.y - p.y) < p.r + it.r) {
-      if (it.kind === "food") p.hp = Math.min(p.maxHp, p.hp + 30);
+      if (it.kind === "food") p.hp = Math.min(p.maxHp, p.hp + 5 + Math.floor(Math.random() * 11)); // 5–15 HP
       else if (it.kind === "chest") state.pendingLevelUps++;
       sfx("pickup");
       return false;
@@ -1570,13 +1570,13 @@ function render() {
     }
   }
 
-  // mechaniczna ręka (celuje sama)
+  // mechaniczna ręka (celuje sama, dłoń skierowana do wroga)
   if (s.abil.arm.lvl > 0) {
     const ang = s.armAng;
     const gx = p.x + Math.cos(ang) * (p.r + 8), gy = p.y + Math.sin(ang) * (p.r + 8);
     ctx.save();
     ctx.translate(gx, gy);
-    ctx.rotate(ang);
+    ctx.rotate(ang + Math.PI); // obrócona w drugą stronę
     if (Math.abs(ang) > Math.PI / 2) ctx.scale(1, -1);
     ctx.imageSmoothingEnabled = false;
     if (S.mechanical_arm) ctx.drawImage(S.mechanical_arm, -22, -16, 44, 32);
