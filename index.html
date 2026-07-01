@@ -21,13 +21,16 @@
       </div>
       <div class="bar-line">
         <img class="bar-icon" src="assets/health.png" alt="HP" />
-        <div id="healthbar"><div id="healthfill"></div></div>
+        <div id="healthbar"><div id="healthfill"></div><span id="hptext">100/100</span></div>
       </div>
       <div class="bar-line">
         <img class="bar-icon" src="assets/xp.png" alt="XP" />
         <div id="xpbar"><div id="xpfill"></div></div>
       </div>
     </div>
+
+    <!-- Przycisk pauzy -->
+    <button id="pauseBtn" class="hidden" aria-label="Pauza">⏸</button>
 
     <!-- Wirtualny joystick (telefon) -->
     <div id="joystick" class="hidden">
@@ -56,6 +59,14 @@
       <h1>⬆️ Poziom <span id="lvlNum">2</span></h1>
       <p class="desc">Wybierz ulepszenie:</p>
       <div id="cards" class="cards-choice"></div>
+    </div>
+
+    <!-- Ekran pauzy -->
+    <div id="pause" class="overlay hidden">
+      <h1>⏸ Pauza</h1>
+      <button id="resumeBtn" class="btn">Wznów</button>
+      <button id="soundBtn" class="btn btn-ghost">🔊 Dźwięk: wł.</button>
+      <button id="quitBtn" class="btn btn-ghost">Zakończ grę</button>
     </div>
 
     <!-- Ekran końca gry -->

@@ -14,6 +14,7 @@ const waveEl = document.getElementById("wave");
 const waveMaxEl = document.getElementById("waveMax");
 const levelEl = document.getElementById("level");
 const healthFill = document.getElementById("healthfill");
+const hpTextEl = document.getElementById("hptext");
 const xpFill = document.getElementById("xpfill");
 
 // --- Ekrany ---
@@ -100,11 +101,34 @@ function typePool(level) {
 
 const FLASH = 0.18;
 
+// tła zależne od poziomu (stonowane, średnie tony)
+const BG = [
+  ["#26374f", "#111c2e"], // niebieski
+  ["#3a2f4d", "#1a1526"], // fiolet
+  ["#2f4a3c", "#16241c"], // zielony
+  ["#4a3a2c", "#241a12"], // brąz
+  ["#3f2f42", "#211421"], // śliwka
+  ["#2f434a", "#131f24"], // morski
+  ["#4a2f38", "#26131b"], // bordo
+  ["#3a3f2f", "#1f2114"], // oliwka
+];
+function applyBackground(level) {
+  const [a, b] = BG[(level - 1) % BG.length];
+  canvas.style.background = `radial-gradient(circle at center, ${a} 0%, ${b} 72%)`;
+}
+
 // ===== Stan gry =====
 let state = null;
 let running = false;
 let paused = false;
+let pauseMenu = false;
 let lastTime = 0;
+
+const pauseBtn = document.getElementById("pauseBtn");
+const pauseScreen = document.getElementById("pause");
+const resumeBtn = document.getElementById("resumeBtn");
+const soundBtn = document.getElementById("soundBtn");
+const quitBtn = document.getElementById("quitBtn");
 
 function newState() {
   return {
@@ -124,7 +148,9 @@ function newState() {
       tornado: { lvl: 0, cd: 0 },
       flower: { lvl: 0, cd: 0 },
       car: { lvl: 0, cd: 0 },
+      flail: { lvl: 0 },
     },
+    flailAngle: 0,
     enemies: [],
     bullets: [],
     fireballs: [],
@@ -141,6 +167,11 @@ function newState() {
     transition: null,
     aimAng: 0,
     banner: null,
+    hurtFlash: 0,
+    prevHp: 100,
+    monkeyKills: 0,
+    monkeyCd: 18,
+    foodCd: 12,
     shake: 0,
     freeze: 0,
     glevel: 1,
@@ -161,6 +192,53 @@ function newState() {
 const keys = {};
 window.addEventListener("keydown", (e) => (keys[e.key.toLowerCase()] = true));
 window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+
+// ===== Dźwięki (proceduralne, WebAudio – bez plików) =====
+let audioCtx = null;
+let soundOn = true;
+let lastDeath = 0;
+function initAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+}
+function tone(freq, dur, type, vol, slideTo) {
+  if (!soundOn || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || "square";
+  o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(vol || 0.2, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol) {
+  if (!soundOn || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  const n = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol || 0.2, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(g); g.connect(audioCtx.destination); src.start(t);
+}
+function sfx(kind) {
+  if (!soundOn || !audioCtx) return;
+  switch (kind) {
+    case "shoot": tone(700, 0.08, "square", 0.1, 300); break;
+    case "explosion": noise(0.35, 0.3); tone(90, 0.3, "sawtooth", 0.18, 40); break;
+    case "pickup": tone(520, 0.1, "sine", 0.2, 880); break;
+    case "levelup": tone(523, 0.12, "triangle", 0.22); setTimeout(() => tone(784, 0.16, "triangle", 0.22), 120); break;
+    case "death": { const now = performance.now(); if (now - lastDeath < 45) return; lastDeath = now; tone(220, 0.1, "square", 0.09, 110); break; }
+    case "portal": tone(200, 0.6, "sawtooth", 0.25, 900); break;
+    case "damage": noise(0.15, 0.25); tone(120, 0.18, "sawtooth", 0.2, 60); break;
+    case "monkey": tone(900, 0.06, "square", 0.16, 1300); setTimeout(() => tone(1150, 0.06, "square", 0.16, 700), 80); setTimeout(() => tone(800, 0.05, "square", 0.14, 1200), 160); break;
+  }
+}
 
 // ===== Wejście: mysz (celowanie) =====
 const mouse = { x: 0, y: 0, active: false };
@@ -210,6 +288,7 @@ function moveVector() {
 function nearestEnemy(x, y) {
   let best = null, bd = Infinity;
   for (const e of state.enemies) {
+    if (e.passive) continue; // małpa nie jest celem auto-broni
     if (e.alpha !== undefined && e.alpha < 0.5) continue; // duch nietykalny
     const d = Math.hypot(e.x - x, e.y - y);
     if (d < bd) { bd = d; best = e; }
@@ -223,8 +302,26 @@ function difficulty() {
   const g = (state.glevel - 1) * state.wavesInLevel + state.wave;
   return { hp: 1 + g * 0.1, speed: 1 + g * 0.012, dmg: 1 + g * 0.03 };
 }
+function spawnMonkey() {
+  const s = state;
+  const margin = 60;
+  const cx = 120 + Math.random() * (view.w - 240);
+  const cy = 130 + Math.random() * (view.h - 220);
+  const hp = 8 + s.monkeyKills * 6; // coraz więcej HP po każdym pokonaniu
+  s.enemies.push({
+    type: "monkey", behavior: "monkey", boss: false, passive: true,
+    x: cx - 55, y: cy, r: 22, baseSpeed: 70, speed: 70,
+    hp, maxHp: hp, xp: 3, dmg: 0,
+    hitCd: 0, flailCd: 0, dmgCd: 0, flash: 0, faceFlip: false, seed: Math.random() * 100,
+    cx, cy, orbA: 0, fleeing: false, gone: false, lifeT: 0, fleeAt: 8 + Math.random() * 4,
+    timer: 0, moving: true, alpha: 1, chargeCd: 0, charging: false, chargeT: 0, cdx: 0, cdy: 0, shootCd: 0, trailCd: 0,
+  });
+  sfx("monkey");
+}
+
 function genObstacles() {
   const s = state;
+  applyBackground(s.glevel);
   s.obstacles = [];
   const count = Math.min(7, 3 + s.glevel);
   let tries = 0;
@@ -305,7 +402,7 @@ function spawnEnemy(forceType) {
     type, behavior: t.behavior, boss: !!t.boss,
     x, y, r: t.r, baseSpeed: t.speed * d.speed, speed: t.speed * d.speed,
     hp, maxHp: hp, xp: t.xp, dmg: Math.round(t.dmg * d.dmg),
-    hitCd: 0, dmgCd: 0, flash: 0, faceFlip: false,
+    hitCd: 0, flailCd: 0, dmgCd: 0, flash: 0, faceFlip: false,
     seed: Math.random() * 100,
     timer: 0, moving: true, alpha: 1,
     chargeCd: 1.5 + Math.random(), charging: false, chargeT: 0, cdx: 0, cdy: 0,
@@ -315,6 +412,7 @@ function spawnEnemy(forceType) {
 
 function damageEnemy(e, dmg) { e.hp -= dmg; e.flash = FLASH; }
 function createExplosion(x, y, radius, dmg, hurtPlayer, sprite) {
+  sfx("explosion");
   state.effects.push({ x, y, r: radius, timer: 0.45, max: 0.45, sprite: sprite || "explosion" });
   addShake(radius > 80 ? 8 : 5);
   for (const e of state.enemies) {
@@ -357,11 +455,13 @@ function upgradePool() {
     { id: "tornado", icon: "tornado.png", title: a.tornado.lvl ? "Większe tornado" : "Tornado", desc: a.tornado.lvl ? "Częstsze, silniejsze" : "Wzywa tornado tnące wrogów", lvl: a.tornado.lvl, apply: () => (a.tornado.lvl += 1) },
     { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, apply: () => (a.flower.lvl += 1) },
     { id: "car", icon: "car.png", title: a.car.lvl ? "Szybsze auto" : "Auto", desc: a.car.lvl ? "Częstsze przejazdy" : "Auto przejeżdża i rozjeżdża wrogów", lvl: a.car.lvl, apply: () => (a.car.lvl += 1) },
+    { id: "flail", icon: "spiked_ball.png", title: a.flail.lvl ? "Cięższa kula" : "Kolczasta kula", desc: a.flail.lvl ? "Więcej kul / obrażeń" : "Kula na łańcuchu krąży i miażdży", lvl: a.flail.lvl, show: a.flail.lvl < 3, apply: () => (a.flail.lvl += 1) },
   ];
   return list.filter((u) => u.show !== false);
 }
 function openLevelUp() {
   paused = true;
+  sfx("levelup");
   lvlNumEl.textContent = state.player.level;
   const pool = upgradePool();
   const chosen = [];
@@ -395,6 +495,26 @@ function openLevelUp() {
 
 // ===== Zachowania wrogów =====
 function updateEnemy(e, dt, p) {
+  // małpa-handlarz: pasywna, krąży w kółko, po chwili ucieka
+  if (e.behavior === "monkey") {
+    e.lifeT += dt;
+    if (!e.fleeing && e.lifeT > e.fleeAt) e.fleeing = true;
+    if (e.fleeing) {
+      const tx = e.cx < view.w / 2 ? -90 : view.w + 90;
+      const dir = tx < e.x ? -1 : 1;
+      e.x += dir * e.speed * 1.7 * dt;
+      e.faceFlip = dir > 0;
+      if (e.x < -80 || e.x > view.w + 80) e.gone = true;
+    } else {
+      const px = e.x;
+      e.orbA += dt * 1.6;
+      e.x = e.cx + Math.cos(e.orbA) * 55;
+      e.y = e.cy + Math.sin(e.orbA) * 55;
+      e.faceFlip = e.x > px;
+    }
+    return;
+  }
+
   const dx = p.x - e.x, dy = p.y - e.y;
   const d = Math.hypot(dx, dy) || 1;
   const nx = dx / d, ny = dy / d;
@@ -485,7 +605,9 @@ function update(dt) {
 
   if (s.shake > 0) s.shake = Math.max(0, s.shake - dt * 30);
   if (s.freeze > 0) s.freeze -= dt;
+  if (s.hurtFlash > 0) s.hurtFlash = Math.max(0, s.hurtFlash - dt * 2);
   if (s.banner) { s.banner.t -= dt; if (s.banner.t <= 0) s.banner = null; }
+  s.prevHp = p.hp;
 
   // ruch gracza
   const mv = moveVector();
@@ -507,6 +629,7 @@ function update(dt) {
     if (Math.hypot(s.portal.x - p.x, s.portal.y - p.y) < s.portal.r + p.r) {
       s.transition = { t: 1.3, max: 1.3, done: false };
       s.portal = null;
+      sfx("portal");
     }
   } else {
     // spawnowanie fali
@@ -520,8 +643,8 @@ function update(dt) {
         s.toSpawn--;
         s.spawnTimer = Math.max(0.2, 0.8 - s.glevel * 0.04);
       }
-    } else if (s.enemies.length === 0) {
-      // fala wyczyszczona
+    } else if (s.enemies.filter((e) => !e.passive).length === 0) {
+      // fala wyczyszczona (małpy nie liczą się do fali)
       if (s.wave < s.wavesInLevel) { s.wave++; s.waveDelay = 1.5; }
       else spawnPortal();
     }
@@ -535,6 +658,17 @@ function update(dt) {
     swords.push({ x: p.x + Math.cos(a) * s.sword.orbit, y: p.y + Math.sin(a) * s.sword.orbit });
   }
 
+  // kolczaste kule na łańcuchu (broń orbitalna, kręcą się w drugą stronę)
+  const flails = [];
+  if (s.abil.flail.lvl > 0) {
+    s.flailAngle -= (3 + s.abil.flail.lvl * 0.3) * dt;
+    const cnt = Math.min(3, s.abil.flail.lvl);
+    for (let i = 0; i < cnt; i++) {
+      const a = s.flailAngle + (i * Math.PI * 2) / cnt;
+      flails.push({ x: p.x + Math.cos(a) * 92, y: p.y + Math.sin(a) * 92 });
+    }
+  }
+
   // zdolności
   const a = s.abil;
   if (a.gun.lvl > 0) {
@@ -543,6 +677,7 @@ function update(dt) {
       const ang = s.aimAng; // strzela tam, gdzie celuje pistolet (mysz / wróg)
       s.bullets.push({ x: p.x + Math.cos(ang) * p.r, y: p.y + Math.sin(ang) * p.r, vx: Math.cos(ang) * 560, vy: Math.sin(ang) * 560, dmg: 1 + a.gun.lvl, life: 1.5 });
       a.gun.cd = Math.max(0.22, 0.9 - a.gun.lvl * 0.1);
+      sfx("shoot");
     }
   }
   if (a.bomb.lvl > 0) {
@@ -607,8 +742,22 @@ function update(dt) {
   if (s.flowerCd <= 0 && s.flowers.length < 5) {
     const fx = 60 + Math.random() * (view.w - 120);
     const fy = 90 + Math.random() * (view.h - 150);
-    if (Math.hypot(fx - p.x, fy - p.y) > 120) s.flowers.push({ x: fx, y: fy, state: "idle", t: 0 });
+    if (Math.hypot(fx - p.x, fy - p.y) > 120) s.flowers.push({ x: fx, y: fy, state: "idle", t: 0, friendly: false });
     s.flowerCd = 3 + Math.random() * 3;
+  }
+
+  // małpa-handlarz co jakiś czas (jeśli żadnej nie ma)
+  s.monkeyCd -= dt;
+  if (s.monkeyCd <= 0) {
+    if (!s.enemies.some((e) => e.passive)) spawnMonkey();
+    s.monkeyCd = 18 + Math.random() * 14;
+  }
+
+  // jedzenie pojawia się od czasu do czasu (nie ciągle – żeby nie leczyć się bez końca)
+  s.foodCd -= dt;
+  if (s.foodCd <= 0) {
+    s.pickups.push({ kind: "food", x: 60 + Math.random() * (view.w - 120), y: 100 + Math.random() * (view.h - 150), r: 14, life: 7 });
+    s.foodCd = 16 + Math.random() * 12;
   }
   for (const f of s.flowers) {
     if (f.state === "idle") {
@@ -660,7 +809,7 @@ function update(dt) {
   // wrogowie
   const frozen = s.freeze > 0;
   for (const e of s.enemies) {
-    e.hitCd -= dt; e.dmgCd -= dt;
+    e.hitCd -= dt; e.flailCd -= dt; e.dmgCd -= dt;
     if (e.flash > 0) e.flash -= dt;
     if (!frozen) updateEnemy(e, dt, p);
     else if (e.behavior === "phase") e.alpha = 0.6; // widoczny gdy zamrożony
@@ -678,10 +827,20 @@ function update(dt) {
           break;
         }
       }
+      // kolczaste kule
+      for (const fl of flails) {
+        if (e.flailCd <= 0 && Math.hypot(fl.x - e.x, fl.y - e.y) < 30 + e.r) {
+          damageEnemy(e, 2 + s.abil.flail.lvl);
+          e.flailCd = 0.35;
+          const kd = Math.hypot(fl.x - e.x, fl.y - e.y) || 1;
+          e.x += ((e.x - fl.x) / kd) * 18; e.y += ((e.y - fl.y) / kd) * 18;
+          break;
+        }
+      }
     }
-    // kontakt z graczem
+    // kontakt z graczem (małpa jest pasywna)
     const dd = Math.hypot(p.x - e.x, p.y - e.y);
-    if (dd < p.r + e.r && e.dmgCd <= 0 && p.invuln <= 0) {
+    if (!e.passive && dd < p.r + e.r && e.dmgCd <= 0 && p.invuln <= 0) {
       p.hp -= e.dmg; e.dmgCd = 0.6;
       e.x -= ((p.x - e.x) / (dd || 1)) * 22; e.y -= ((p.y - e.y) / (dd || 1)) * 22;
     }
@@ -738,6 +897,7 @@ function update(dt) {
     if (Math.hypot(it.x - p.x, it.y - p.y) < p.r + it.r) {
       if (it.kind === "food") p.hp = Math.min(p.maxHp, p.hp + 30);
       else if (it.kind === "chest") state.pendingLevelUps++;
+      sfx("pickup");
       return false;
     }
     return true;
@@ -746,24 +906,38 @@ function update(dt) {
   // usuń martwych + nagrody
   const alive = [];
   for (const e of s.enemies) {
+    if (e.gone) continue; // małpa uciekła – bez nagrody
     if (e.hp > 0) alive.push(e);
     else onEnemyDeath(e);
   }
   s.enemies = alive;
 
+  if (p.hp < s.prevHp) { s.hurtFlash = Math.min(1, s.hurtFlash + 0.6); sfx("damage"); }
   if (p.hp <= 0) { p.hp = 0; endGame(); return; }
   if (s.pendingLevelUps > 0) openLevelUp();
 }
 
 function onEnemyDeath(e) {
   const s = state;
+  sfx("death");
+  if (e.passive) {
+    // małpa pokonana: następna ma więcej HP + zrzuca 1-5 bananów
+    s.monkeyKills++;
+    addXp(e.xp);
+    const n = 1 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.6;
+      const dist = 26 + Math.random() * 18;
+      s.pickups.push({ kind: "food", x: e.x + Math.cos(a) * dist, y: e.y + Math.sin(a) * dist, r: 14, life: 7 });
+    }
+    return;
+  }
   s.kills++;
   addXp(e.xp);
   if (e.behavior === "exploder") createExplosion(e.x, e.y, 55, 10, true);
   const r = Math.random();
   if (e.boss) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 14 });
-  else if (r < 0.09) s.pickups.push({ kind: "food", x: e.x, y: e.y, r: 14, life: 8 });
-  else if (r < 0.115) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
+  else if (r < 0.03) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
 }
 
 // ===== Rysowanie =====
@@ -789,9 +963,8 @@ function render() {
   // kałuże slime
   for (const pd of s.puddles) {
     ctx.save();
-    ctx.globalAlpha = Math.min(0.6, pd.life / pd.max) * 0.7;
-    ctx.fillStyle = "#4ade80";
-    ctx.beginPath(); ctx.arc(pd.x, pd.y, pd.r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = Math.min(1, pd.life / pd.max);
+    drawSprite(S.slime_trail, pd.x, pd.y, pd.r * 2.6);
     ctx.restore();
   }
 
@@ -848,11 +1021,12 @@ function render() {
   for (const e of s.enemies) {
     const size = e.r * 2.2;
     const flip = e.faceFlip;
+    const base = e.type === "monkey" ? S.monkey_trader : S[ENEMY_TYPES[e.type].sprite];
     ctx.save();
     if (e.alpha < 1) ctx.globalAlpha = e.alpha;
-    drawSprite(S[ENEMY_TYPES[e.type].sprite], e.x, e.y, size, 0, flip);
+    drawSprite(base, e.x, e.y, size, 0, flip);
     ctx.restore();
-    if (e.flash > 0) {
+    if (e.flash > 0 && SR[e.type]) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, e.flash / FLASH) * 0.75;
       drawSprite(SR[e.type], e.x, e.y, size, 0, flip);
@@ -895,8 +1069,8 @@ function render() {
     ctx.restore();
   }
 
-  // pistolet w dłoni – celuje w kursor / wroga
-  {
+  // pistolet w dłoni – dopiero po zdobyciu zdolności; celuje w kursor / wroga
+  if (s.abil.gun.lvl > 0) {
     const ang = s.aimAng;
     const gx = p.x + Math.cos(ang) * (p.r + 4);
     const gy = p.y + Math.sin(ang) * (p.r + 4);
@@ -907,6 +1081,21 @@ function render() {
     ctx.imageSmoothingEnabled = false;
     if (S.gun) ctx.drawImage(S.gun, -16, -16, 32, 32);
     ctx.restore();
+  }
+
+  // kolczaste kule na łańcuchu
+  if (s.abil.flail.lvl > 0) {
+    const cnt = Math.min(3, s.abil.flail.lvl);
+    for (let i = 0; i < cnt; i++) {
+      const a = s.flailAngle + (i * Math.PI * 2) / cnt;
+      const bx = p.x + Math.cos(a) * 92, by = p.y + Math.sin(a) * 92;
+      ctx.save();
+      ctx.strokeStyle = "rgba(190,190,200,0.85)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.restore();
+      drawSprite(S.spiked_ball, bx, by, 40, s.flailAngle * 2);
+    }
   }
 
   // miecze
@@ -928,6 +1117,17 @@ function render() {
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#7dd3fc";
+    ctx.fillRect(0, 0, view.w, view.h);
+    ctx.restore();
+  }
+
+  // efekt obrażeń – czerwona winieta
+  if (s.hurtFlash > 0) {
+    const g = ctx.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.28, view.w / 2, view.h / 2, Math.max(view.w, view.h) * 0.72);
+    g.addColorStop(0, "rgba(220,0,0,0)");
+    g.addColorStop(1, "rgba(200,0,0," + (0.6 * s.hurtFlash).toFixed(3) + ")");
+    ctx.save();
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, view.w, view.h);
     ctx.restore();
   }
@@ -985,6 +1185,7 @@ function updateHud() {
   levelEl.textContent = p.level;
   const hpPct = Math.max(0, p.hp / p.maxHp) * 100;
   healthFill.style.width = hpPct + "%";
+  hpTextEl.textContent = Math.max(0, Math.ceil(p.hp)) + "/" + p.maxHp;
   healthFill.style.background =
     hpPct > 50 ? "linear-gradient(90deg,#4ade80,#22c55e)"
       : hpPct > 25 ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
@@ -1004,19 +1205,23 @@ function loop(now) {
 
 // ===== Start / koniec =====
 function startGame() {
+  initAudio();
   resize();
   state = newState();
   genObstacles();
   startWave();
-  running = true; paused = false;
+  running = true; paused = false; pauseMenu = false;
   lastTime = performance.now();
   startScreen.classList.add("hidden");
   gameoverScreen.classList.add("hidden");
   levelupScreen.classList.add("hidden");
+  pauseScreen.classList.add("hidden");
+  pauseBtn.classList.remove("hidden");
   requestAnimationFrame(loop);
 }
 function endGame() {
-  running = false; paused = false; state.over = true;
+  running = false; paused = false; pauseMenu = false; state.over = true;
+  pauseBtn.classList.add("hidden");
   joystickEl.classList.add("hidden"); joy.active = false;
   finalTimeEl.textContent = state.time.toFixed(1);
   finalKillsEl.textContent = state.kills;
@@ -1028,6 +1233,39 @@ function endGame() {
 startBtn.addEventListener("click", startGame);
 restartBtn.addEventListener("click", startGame);
 
+// ===== Pauza / dźwięk =====
+function setPause(on) {
+  if (!running) return;
+  if (on) {
+    if (paused) return; // np. trwa wybór ulepszenia
+    paused = true; pauseMenu = true;
+    pauseScreen.classList.remove("hidden");
+    joystickEl.classList.add("hidden"); joy.active = false;
+  } else {
+    if (!pauseMenu) return;
+    pauseMenu = false; paused = false;
+    pauseScreen.classList.add("hidden");
+    lastTime = performance.now();
+  }
+}
+function updateSoundLabel() { soundBtn.textContent = soundOn ? "🔊 Dźwięk: wł." : "🔇 Dźwięk: wył."; }
+pauseBtn.addEventListener("click", () => { if (pauseMenu) setPause(false); else if (!paused) setPause(true); });
+resumeBtn.addEventListener("click", () => setPause(false));
+quitBtn.addEventListener("click", () => {
+  running = false; paused = false; pauseMenu = false;
+  pauseScreen.classList.add("hidden");
+  pauseBtn.classList.add("hidden");
+  startScreen.classList.remove("hidden");
+});
+soundBtn.addEventListener("click", () => { soundOn = !soundOn; if (soundOn) initAudio(); updateSoundLabel(); });
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if ((k === "escape" || k === "p") && running) {
+    if (pauseMenu) setPause(false);
+    else if (!paused) setPause(true);
+  }
+});
+
 // hook do testów
 window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
 
@@ -1038,6 +1276,7 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
     "player", "sword", "gun", "bomb", "explosion", "shield", "health",
     "chest", "food", "flower", "freeze", "bullet", "firball", "xp", "tornado",
     "rock", "tree", "car", "bomb_trap", "bomb_trap_effect",
+    "spiked_ball", "monkey_trader", "slime_trail",
     "portal_frame", "portal_swirl", "enemy_projectile",
     "small_enemy", "normal_enemy", "big_enemy", "boss", "slime_enemy", "lizard_enemy",
     "spider_enemy", "ghost_enemy", "golem_enemy", "shooting_enemy", "dino_enemy",
@@ -1048,4 +1287,5 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
 
   // czerwone sylwetki wszystkich typów wrogów
   for (const key in ENEMY_TYPES) SR[key] = makeTint(S[ENEMY_TYPES[key].sprite], "#ff3b3b");
+  SR.monkey = makeTint(S.monkey_trader, "#ff3b3b");
 })();
