@@ -16,6 +16,8 @@ const levelEl = document.getElementById("level");
 const healthFill = document.getElementById("healthfill");
 const hpTextEl = document.getElementById("hptext");
 const xpFill = document.getElementById("xpfill");
+const coinsEl = document.getElementById("coins");
+const comboEl = document.getElementById("combo");
 
 // --- Ekrany ---
 const startScreen = document.getElementById("start");
@@ -23,11 +25,14 @@ const gameoverScreen = document.getElementById("gameover");
 const levelupScreen = document.getElementById("levelup");
 const cardsEl = document.getElementById("cards");
 const lvlNumEl = document.getElementById("lvlNum");
-const startBtn = document.getElementById("startBtn");
 const restartBtn = document.getElementById("restartBtn");
-const finalTimeEl = document.getElementById("finalTime");
-const finalKillsEl = document.getElementById("finalKills");
 const bestEl = document.getElementById("best");
+const statsBoxEl = document.getElementById("statsBox");
+const statsChart = document.getElementById("statsChart");
+const shopScreen = document.getElementById("shop");
+const shopItemsEl = document.getElementById("shopItems");
+const shopCoinsEl = document.getElementById("shopCoins");
+const shopNextBtn = document.getElementById("shopNext");
 
 // --- Joystick ---
 const joystickEl = document.getElementById("joystick");
@@ -86,7 +91,7 @@ const ENEMY_TYPES = {
   golem:    { sprite: "golem_enemy",    r: 36, hp: 15, speed: 32,  xp: 6, dmg: 22, behavior: "tank" },
   robot:    { sprite: "robot_enemy",    r: 30, hp: 11, speed: 46,  xp: 6, dmg: 16, behavior: "tank" },
   devourer: { sprite: "devourer_enemy", r: 24, hp: 6,  speed: 55,  xp: 6, dmg: 14, behavior: "devour" },
-  boss:     { sprite: "boss",           r: 55, hp: 70, speed: 38,  xp: 30, dmg: 30, behavior: "chaser", boss: true },
+  bug:      { sprite: "bug_enemy",      r: 26, hp: 9,  speed: 40,  xp: 5, dmg: 14, behavior: "tank" },
 };
 
 // jakie typy dostępne na danym poziomie (rosnąca różnorodność)
@@ -94,7 +99,7 @@ function typePool(level) {
   const p = ["small", "normal", "big", "spider"];
   if (level >= 2) p.push("slime", "lizard", "creature");
   if (level >= 3) p.push("ghost", "shooter", "fish");
-  if (level >= 4) p.push("dino", "demon", "golem");
+  if (level >= 4) p.push("dino", "demon", "golem", "bug");
   if (level >= 5) p.push("robot", "devourer");
   return p;
 }
@@ -122,7 +127,24 @@ let state = null;
 let running = false;
 let paused = false;
 let pauseMenu = false;
+let shopOpen = false;
 let lastTime = 0;
+
+// wybrana trudność (ustawiana na ekranie startowym)
+let difficultyMult = { hp: 1, dmg: 1, speed: 1, coin: 1, name: "Normalny" };
+
+// definicje bossów (każdy inny) – kind steruje atakami
+const BOSS_DEFS = [
+  { sprite: "boss1", name: "Ognisty Golem", r: 54, hp: 120, speed: 34, color: "#f97316", kind: "fire" },
+  { sprite: "boss2", name: "Krwawy Pająk", r: 50, hp: 140, speed: 58, color: "#ef4444", kind: "summon" },
+  { sprite: "boss3", name: "Wąż Cienia", r: 48, hp: 130, speed: 130, color: "#a855f7", kind: "charge" },
+  { sprite: "boss4", name: "Pradawny Dino", r: 62, hp: 210, speed: 30, color: "#14b8a6", kind: "slam" },
+  { sprite: "boss5", name: "Demon Furii", r: 50, hp: 155, speed: 95, color: "#dc2626", kind: "dash" },
+  { sprite: "boss6", name: "Czarny Rycerz", r: 50, hp: 175, speed: 55, color: "#cbd5e1", kind: "slash" },
+  { sprite: "boss7", name: "Kogut Zagłady", r: 46, hp: 135, speed: 105, color: "#eab308", kind: "eggs" },
+];
+
+const EVENT_NAME = { slime: "🟢 Inwazja Slime'ów!", swarm: "🐝 Rój!", night: "🌙 Noc — uważaj!" };
 
 const pauseBtn = document.getElementById("pauseBtn");
 const pauseScreen = document.getElementById("pause");
@@ -135,8 +157,9 @@ function newState() {
     player: {
       x: view.w / 2, y: view.h / 2, r: 22, speed: 230,
       hp: 100, maxHp: 100, xp: 0, xpNext: 5, level: 1,
-      invuln: 0, puddleCd: 0,
+      invuln: 0, puddleCd: 0, pickupRange: 0, regen: 0,
     },
+    shopBought: {},
     sword: { count: 1, damage: 1, orbit: 54, rotSpeed: 5, hitR: 26, sprite: "sword" },
     angle: 0,
     abil: {
@@ -149,6 +172,7 @@ function newState() {
       flower: { lvl: 0, cd: 0 },
       car: { lvl: 0, cd: 0 },
       flail: { lvl: 0 },
+      magnet: { lvl: 0 },
     },
     flailAngle: 0,
     enemies: [],
@@ -161,6 +185,7 @@ function newState() {
     flowers: [],
     tornadoes: [],
     cars: [],
+    particles: [],
     obstacles: [],
     enemyBullets: [],
     portal: null,
@@ -185,6 +210,17 @@ function newState() {
     kills: 0,
     pendingLevelUps: 0,
     over: false,
+    // waluta / kombo / wynik
+    coins: 0,
+    combo: 0,
+    comboTimer: 0,
+    score: 0,
+    // fazy poziomu i wydarzenia
+    levelPhase: "waves", // "waves" | "boss" | "cleared"
+    event: null,
+    bossName: "",
+    // statystyki do ekranu śmierci
+    stats: { dmgDealt: 0, dmgBySource: {}, timeline: [], bucket: 0, bucketT: 0 },
   };
 }
 
@@ -239,6 +275,31 @@ function sfx(kind) {
     case "monkey": tone(900, 0.06, "square", 0.16, 1300); setTimeout(() => tone(1150, 0.06, "square", 0.16, 700), 80); setTimeout(() => tone(800, 0.05, "square", 0.14, 1200), 160); break;
   }
 }
+
+// muzyka w tle (prosta proceduralna pętla)
+let musicTimer = null, musicStep = 0;
+const MSCALE = [220, 262, 294, 349, 392, 440, 523];
+function musicNote(freq, dur, vol) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = "triangle"; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur);
+}
+function musicStart() {
+  if (musicTimer) return;
+  musicTimer = setInterval(() => {
+    if (!soundOn || !audioCtx || !running || paused) return;
+    const n = MSCALE[(musicStep * 3 + (musicStep % 2 ? 2 : 0)) % MSCALE.length];
+    musicNote(n, 0.22, 0.035);
+    if (musicStep % 4 === 0) musicNote(n / 2, 0.5, 0.05); // bas
+    musicStep++;
+  }, 265);
+}
+function musicStop() { if (musicTimer) { clearInterval(musicTimer); musicTimer = null; } }
 
 // ===== Wejście: mysz (celowanie) =====
 const mouse = { x: 0, y: 0, active: false };
@@ -296,11 +357,42 @@ function nearestEnemy(x, y) {
   return best;
 }
 function addShake(n) { state.shake = Math.min(14, state.shake + n); }
+function spawnParticles(x, y, n, color, spd, life) {
+  const ps = state.particles;
+  if (ps.length > 320) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = (spd || 120) * (0.4 + Math.random() * 0.8);
+    ps.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: life || 0.5, max: life || 0.5, color: color || "#fde047", size: 2 + Math.random() * 2 });
+  }
+}
 
 // ===== Fale / poziomy =====
 function difficulty() {
   const g = (state.glevel - 1) * state.wavesInLevel + state.wave;
-  return { hp: 1 + g * 0.1, speed: 1 + g * 0.012, dmg: 1 + g * 0.03 };
+  return {
+    hp: (1 + g * 0.1) * difficultyMult.hp,
+    speed: (1 + g * 0.012) * difficultyMult.speed,
+    dmg: (1 + g * 0.03) * difficultyMult.dmg,
+  };
+}
+function spawnBoss() {
+  const s = state;
+  const def = BOSS_DEFS[(s.glevel - 1) % BOSS_DEFS.length];
+  const hp = Math.round(def.hp * (1 + (s.glevel - 1) * 0.35) * difficultyMult.hp);
+  s.enemies.push({
+    type: "boss", isBoss: true, kind: def.kind, def,
+    behavior: "boss", boss: true, passive: false,
+    x: view.w / 2, y: 100, r: def.r,
+    baseSpeed: def.speed * difficultyMult.speed, speed: def.speed * difficultyMult.speed,
+    hp, maxHp: hp, xp: 45, dmg: Math.round(26 * difficultyMult.dmg),
+    hitCd: 0, flailCd: 0, dmgCd: 0, flash: 0, faceFlip: false, seed: 0,
+    timer: 0, moving: true, alpha: 1,
+    atkCd: 2.5, phase: 1, charging: false, chargeT: 0, cdx: 0, cdy: 0,
+  });
+  s.bossName = def.name;
+  s.banner = { text: "BOSS: " + def.name, t: 2.8, max: 2.8 };
+  sfx("portal");
 }
 function spawnMonkey() {
   const s = state;
@@ -351,10 +443,15 @@ function resolveObstacles(e) {
 
 function startWave() {
   const s = state;
+  // wydarzenie specjalne (od 2. poziomu, z pewną szansą)
+  s.event = null;
+  if (s.glevel >= 2 && Math.random() < 0.28) {
+    s.event = ["slime", "swarm", "night"][Math.floor(Math.random() * 3)];
+    s.banner = { text: EVENT_NAME[s.event], t: 2.4, max: 2.4 };
+  }
   s.toSpawn = 5 + s.wave * 2 + s.glevel * 3;
+  if (s.event === "swarm") s.toSpawn = Math.round(s.toSpawn * 1.8);
   s.spawnTimer = 0.3;
-  // boss na ostatniej fali poziomu
-  if (s.wave === s.wavesInLevel) spawnEnemy("boss");
 }
 function nextLevel() {
   const s = state;
@@ -365,6 +462,8 @@ function nextLevel() {
   s.enemies = [];
   s.enemyBullets = [];
   s.puddles = [];
+  s.levelPhase = "waves";
+  s.event = null;
   s.player.hp = Math.min(s.player.maxHp, s.player.hp + s.player.maxHp * 0.35);
   s.banner = { text: "POZIOM " + s.glevel, t: 2.2, max: 2.2 };
   genObstacles();
@@ -392,16 +491,21 @@ function spawnEnemy(forceType) {
 
   let type = forceType;
   if (!type) {
-    const pool = typePool(s.glevel);
-    type = pool[Math.floor(Math.random() * pool.length)];
+    if (s.event === "slime") type = "slime";
+    else if (s.event === "swarm") type = "small";
+    else { const pool = typePool(s.glevel); type = pool[Math.floor(Math.random() * pool.length)]; }
   }
   const t = ENEMY_TYPES[type];
   const d = difficulty();
-  const hp = Math.max(1, Math.round(t.hp * d.hp));
+  // elita: rzadka, mocniejsza, świeci i ma gwarantowany drop
+  const elite = !forceType && s.glevel >= 2 && Math.random() < 0.06;
+  const em = elite ? 2.6 : 1;
+  const hp = Math.max(1, Math.round(t.hp * d.hp * em));
   s.enemies.push({
-    type, behavior: t.behavior, boss: !!t.boss,
-    x, y, r: t.r, baseSpeed: t.speed * d.speed, speed: t.speed * d.speed,
-    hp, maxHp: hp, xp: t.xp, dmg: Math.round(t.dmg * d.dmg),
+    type, behavior: t.behavior, boss: !!t.boss, isElite: elite,
+    x, y, r: t.r * (elite ? 1.18 : 1),
+    baseSpeed: t.speed * d.speed * (elite ? 0.9 : 1), speed: t.speed * d.speed * (elite ? 0.9 : 1),
+    hp, maxHp: hp, xp: t.xp * (elite ? 3 : 1), dmg: Math.round(t.dmg * d.dmg * (elite ? 1.3 : 1)),
     hitCd: 0, flailCd: 0, dmgCd: 0, flash: 0, faceFlip: false,
     seed: Math.random() * 100,
     timer: 0, moving: true, alpha: 1,
@@ -410,7 +514,15 @@ function spawnEnemy(forceType) {
   });
 }
 
-function damageEnemy(e, dmg) { e.hp -= dmg; e.flash = FLASH; }
+function damageEnemy(e, dmg) {
+  e.hp -= dmg; e.flash = FLASH;
+  state.stats.dmgDealt += dmg; state.stats.bucket += dmg;
+  spawnParticles(e.x, e.y, 2, "#fde047", 90, 0.3);
+}
+function recordDmg(src, v) {
+  const m = state.stats.dmgBySource;
+  m[src] = (m[src] || 0) + v;
+}
 function createExplosion(x, y, radius, dmg, hurtPlayer, sprite) {
   sfx("explosion");
   state.effects.push({ x, y, r: radius, timer: 0.45, max: 0.45, sprite: sprite || "explosion" });
@@ -423,6 +535,7 @@ function createExplosion(x, y, radius, dmg, hurtPlayer, sprite) {
     if (p.invuln <= 0 && Math.hypot(p.x - x, p.y - y) < radius + p.r) {
       p.hp -= dmg;
       p.invuln = Math.max(p.invuln, 0.4);
+      recordDmg("wybuch", dmg);
     }
   }
 }
@@ -456,6 +569,7 @@ function upgradePool() {
     { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, apply: () => (a.flower.lvl += 1) },
     { id: "car", icon: "car.png", title: a.car.lvl ? "Szybsze auto" : "Auto", desc: a.car.lvl ? "Częstsze przejazdy" : "Auto przejeżdża i rozjeżdża wrogów", lvl: a.car.lvl, apply: () => (a.car.lvl += 1) },
     { id: "flail", icon: "spiked_ball.png", title: a.flail.lvl ? "Cięższa kula" : "Kolczasta kula", desc: a.flail.lvl ? "Więcej kul / obrażeń" : "Kula na łańcuchu krąży i miażdży", lvl: a.flail.lvl, show: a.flail.lvl < 3, apply: () => (a.flail.lvl += 1) },
+    { id: "magnet", icon: "magnet.png", title: a.magnet.lvl ? "Silniejszy magnes" : "Magnes", desc: a.magnet.lvl ? "Większy zasięg zbierania" : "Przyciąga jedzenie i skrzynie", lvl: a.magnet.lvl, apply: () => (a.magnet.lvl += 1) },
   ];
   return list.filter((u) => u.show !== false);
 }
@@ -493,8 +607,121 @@ function openLevelUp() {
   levelupScreen.classList.remove("hidden");
 }
 
+// ===== Sklep (stałe ulepszenia za monety) =====
+const SHOP_ITEMS = [
+  { id: "hp", title: "+30 Max HP", desc: "Trwałe zdrowie", base: 15, apply: (p) => { p.maxHp += 30; p.hp += 30; } },
+  { id: "dmg", title: "+2 Obrażenia miecza", desc: "Mocniejsza broń", base: 20, apply: (p, s) => { s.sword.damage += 2; } },
+  { id: "speed", title: "+20 Prędkość", desc: "Szybszy ruch", base: 15, apply: (p) => { p.speed += 20; } },
+  { id: "range", title: "+40 Zasięg zbierania", desc: "Przyciąga przedmioty", base: 12, apply: (p) => { p.pickupRange += 40; } },
+  { id: "regen", title: "+1 Regeneracja HP/s", desc: "Powolne leczenie", base: 30, apply: (p) => { p.regen += 1; } },
+  { id: "heal", title: "Pełne leczenie", desc: "Ulecz do pełna", base: 10, repeatCost: true, apply: (p) => { p.hp = p.maxHp; } },
+];
+function buildShop() {
+  const s = state, p = s.player;
+  shopCoinsEl.textContent = s.coins;
+  shopItemsEl.innerHTML = "";
+  for (const it of SHOP_ITEMS) {
+    const bought = s.shopBought[it.id] || 0;
+    const cost = it.repeatCost ? it.base : it.base + bought * it.base;
+    const btn = document.createElement("button");
+    btn.className = "shop-card";
+    btn.disabled = s.coins < cost;
+    btn.innerHTML = `<div><div class="s-title">${it.title}</div><div class="s-desc">${it.desc}${bought ? " (x" + bought + ")" : ""}</div></div><div class="s-price">💰 ${cost}</div>`;
+    btn.addEventListener("click", () => {
+      if (s.coins < cost) return;
+      s.coins -= cost; s.shopBought[it.id] = bought + 1;
+      it.apply(p, s); sfx("pickup"); buildShop();
+    });
+    shopItemsEl.appendChild(btn);
+  }
+}
+function openShop() {
+  shopOpen = true; paused = true;
+  buildShop();
+  shopScreen.classList.remove("hidden");
+}
+
+// ===== Bossowie =====
+function bossShoot(e, ang, speed, dmg, sprite, size) {
+  state.enemyBullets.push({ x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, a: ang, dmg, life: 4, sprite, size: size || 30, src: e.def.name });
+}
+function updateBoss(e, dt, p) {
+  const s = state;
+  const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy) || 1;
+  const nx = dx / d, ny = dy / d;
+  const enraged = e.hp < e.maxHp * 0.5; // faza 2 poniżej połowy HP
+  e.phase = enraged ? 2 : 1;
+  const spd = e.baseSpeed * (enraged ? 1.35 : 1);
+  e.atkCd -= dt;
+  e.faceFlip = p.x > e.x;
+
+  switch (e.kind) {
+    case "fire": // wachlarz / pierścień ognia
+      e.x += nx * spd * 0.35 * dt; e.y += ny * spd * 0.35 * dt;
+      if (e.atkCd <= 0) {
+        const base = Math.atan2(dy, dx), n = enraged ? 12 : 6;
+        for (let i = 0; i < n; i++) { const ang = enraged ? (i / n) * Math.PI * 2 : base + (i - (n - 1) / 2) * 0.22; bossShoot(e, ang, 210, e.dmg * 0.5, "effect7", 34); }
+        e.atkCd = enraged ? 1.6 : 2.3;
+      }
+      break;
+    case "summon": // przyzywa pajączki + strzał
+      e.x += nx * spd * 0.6 * dt; e.y += ny * spd * 0.6 * dt;
+      if (e.atkCd <= 0) {
+        for (let i = 0; i < (enraged ? 3 : 2); i++) spawnEnemy("spider");
+        bossShoot(e, Math.atan2(dy, dx), 180, e.dmg * 0.4, "effect3", 30);
+        e.atkCd = enraged ? 3 : 4.5;
+      }
+      break;
+    case "charge": // szarże + trucizna
+      if (e.charging) {
+        e.chargeT -= dt; e.x += e.cdx * spd * 2.4 * dt; e.y += e.cdy * spd * 2.4 * dt;
+        s.puddles.push({ x: e.x, y: e.y, r: 22, life: 3, max: 3 });
+        if (e.chargeT <= 0) { e.charging = false; e.atkCd = enraged ? 1.2 : 2; }
+      } else {
+        e.x += nx * spd * 0.5 * dt; e.y += ny * spd * 0.5 * dt;
+        if (e.atkCd <= 0) { e.charging = true; e.chargeT = 0.7; e.cdx = nx; e.cdy = ny; e.flash = FLASH; }
+      }
+      break;
+    case "slam": // fala uderzeniowa w miejscu gracza
+      e.x += nx * spd * dt; e.y += ny * spd * dt;
+      if (e.atkCd <= 0) { createExplosion(p.x, p.y, enraged ? 150 : 110, e.dmg * 0.6, true, "effect6"); e.atkCd = enraged ? 2.2 : 3.2; }
+      break;
+    case "dash": // doskoki + cięcia
+      if (e.charging) {
+        e.chargeT -= dt; e.x += e.cdx * spd * 3 * dt; e.y += e.cdy * spd * 3 * dt;
+        if (e.chargeT <= 0) { e.charging = false; e.atkCd = enraged ? 0.9 : 1.6; }
+      } else {
+        e.x += nx * spd * 0.7 * dt; e.y += ny * spd * 0.7 * dt;
+        if (e.atkCd <= 0) { e.charging = true; e.chargeT = 0.4; e.cdx = nx; e.cdy = ny; e.flash = FLASH; bossShoot(e, Math.atan2(dy, dx), 260, e.dmg * 0.5, "effect8", 34); }
+      }
+      break;
+    case "slash": // łuk cięć + teleport w furii
+      e.x += nx * spd * 0.5 * dt; e.y += ny * spd * 0.5 * dt;
+      if (e.atkCd <= 0) {
+        const base = Math.atan2(dy, dx), n = enraged ? 5 : 3;
+        for (let i = 0; i < n; i++) bossShoot(e, base + (i - (n - 1) / 2) * 0.3, 300, e.dmg * 0.5, "effect8", 32);
+        if (enraged && Math.random() < 0.5) { e.x = 80 + Math.random() * (view.w - 160); e.y = 80 + Math.random() * (view.h / 2); }
+        e.atkCd = enraged ? 1.4 : 2.2;
+      }
+      break;
+    case "eggs": // chaotyczny ruch, przyzywa + spojrzenie
+      e.orbA = (e.orbA || 0) + dt * 3;
+      e.x += (nx * 0.5 + Math.cos(e.orbA) * 0.6) * spd * dt;
+      e.y += (ny * 0.5 + Math.sin(e.orbA) * 0.6) * spd * dt;
+      if (e.atkCd <= 0) {
+        if (Math.random() < 0.5) { for (let i = 0; i < 2; i++) spawnEnemy("small"); }
+        else { const m = enraged ? 6 : 4; for (let i = 0; i < m; i++) bossShoot(e, (i / m) * Math.PI * 2, 190, e.dmg * 0.4, "effect2", 30); }
+        e.atkCd = enraged ? 1.8 : 2.8;
+      }
+      break;
+  }
+  e.x = Math.max(e.r, Math.min(view.w - e.r, e.x));
+  e.y = Math.max(e.r, Math.min(view.h - e.r, e.y));
+}
+
 // ===== Zachowania wrogów =====
 function updateEnemy(e, dt, p) {
+  if (e.behavior === "boss") { updateBoss(e, dt, p); return; }
   // małpa-handlarz: pasywna, krąży w kółko, po chwili ucieka
   if (e.behavior === "monkey") {
     e.lifeT += dt;
@@ -592,22 +819,31 @@ function update(dt) {
   const p = s.player;
   s.time += dt;
 
-  // przejście między poziomami (portal) – zamraża rozgrywkę na czas animacji
+  // przejście między poziomami (portal) → po animacji otwiera sklep
   if (s.transition) {
     s.transition.t -= dt;
-    if (!s.transition.done && s.transition.t <= s.transition.max / 2) {
-      nextLevel();
-      s.transition.done = true;
-    }
-    if (s.transition.t <= 0) s.transition = null;
+    if (s.transition.t <= 0) { s.transition = null; openShop(); }
     return;
   }
 
   if (s.shake > 0) s.shake = Math.max(0, s.shake - dt * 30);
   if (s.freeze > 0) s.freeze -= dt;
   if (s.hurtFlash > 0) s.hurtFlash = Math.max(0, s.hurtFlash - dt * 2);
+  if (s.comboTimer > 0) { s.comboTimer -= dt; if (s.comboTimer <= 0) s.combo = 0; }
   if (s.banner) { s.banner.t -= dt; if (s.banner.t <= 0) s.banner = null; }
   s.prevHp = p.hp;
+
+  // statystyki: co sekundę zapisz zadane obrażenia (do wykresu DPS)
+  s.stats.bucketT += dt;
+  if (s.stats.bucketT >= 1) {
+    s.stats.timeline.push(s.stats.bucket);
+    if (s.stats.timeline.length > 90) s.stats.timeline.shift();
+    s.stats.bucket = 0; s.stats.bucketT -= 1;
+  }
+
+  // cząsteczki
+  for (const pt of s.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vx *= 0.92; pt.vy *= 0.92; pt.life -= dt; }
+  s.particles = s.particles.filter((pt) => pt.life > 0);
 
   // ruch gracza
   const mv = moveVector();
@@ -618,6 +854,7 @@ function update(dt) {
   resolveObstacles(p);
   if (p.invuln > 0) p.invuln -= dt;
   if (p.puddleCd > 0) p.puddleCd -= dt;
+  if (p.regen > 0) p.hp = Math.min(p.maxHp, p.hp + p.regen * dt);
 
   // celowanie: mysz (PC) lub najbliższy wróg (telefon)
   if (mouse.active) s.aimAng = Math.atan2(mouse.y - p.y, mouse.x - p.x);
@@ -646,7 +883,7 @@ function update(dt) {
     } else if (s.enemies.filter((e) => !e.passive).length === 0) {
       // fala wyczyszczona (małpy nie liczą się do fali)
       if (s.wave < s.wavesInLevel) { s.wave++; s.waveDelay = 1.5; }
-      else spawnPortal();
+      else if (s.levelPhase === "waves") { s.levelPhase = "boss"; spawnBoss(); }
     }
   }
 
@@ -776,6 +1013,7 @@ function update(dt) {
   // tornada (zdolność) – dryfują ku wrogom i tną
   for (const tn of s.tornadoes) {
     tn.life -= dt; tn.spin += dt * 12;
+    spawnParticles(tn.x, tn.y, 1, "#e0f2fe", 60, 0.3);
     const t = nearestEnemy(tn.x, tn.y);
     if (t) {
       const dx = t.x - tn.x, dy = t.y - tn.y, d = Math.hypot(dx, dy) || 1;
@@ -795,6 +1033,7 @@ function update(dt) {
   // auta (zdolność) – przejeżdżają w poprzek i rozjeżdżają wrogów
   for (const c of s.cars) {
     c.x += c.vx * dt;
+    spawnParticles(c.x - Math.sign(c.vx) * 34, c.y + 8, 1, "#9ca3af", 40, 0.4);
     for (const e of s.enemies) {
       if (e.alpha < 0.5) continue;
       if (!c.hit.has(e) && Math.hypot(e.x - c.x, e.y - c.y) < c.r + e.r) {
@@ -842,7 +1081,8 @@ function update(dt) {
     const dd = Math.hypot(p.x - e.x, p.y - e.y);
     if (!e.passive && dd < p.r + e.r && e.dmgCd <= 0 && p.invuln <= 0) {
       p.hp -= e.dmg; e.dmgCd = 0.6;
-      e.x -= ((p.x - e.x) / (dd || 1)) * 22; e.y -= ((p.y - e.y) / (dd || 1)) * 22;
+      recordDmg(e.isBoss ? e.def.name : e.type, e.dmg);
+      if (!e.isBoss) { e.x -= ((p.x - e.x) / (dd || 1)) * 22; e.y -= ((p.y - e.y) / (dd || 1)) * 22; }
     }
   }
 
@@ -869,7 +1109,7 @@ function update(dt) {
   // pociski wrogów
   for (const b of s.enemyBullets) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-    if (p.invuln <= 0 && Math.hypot(b.x - p.x, b.y - p.y) < p.r + 8) { p.hp -= b.dmg; b.life = 0; }
+    if (p.invuln <= 0 && Math.hypot(b.x - p.x, b.y - p.y) < p.r + (b.size ? b.size * 0.3 : 8)) { p.hp -= b.dmg; recordDmg(b.src || "pocisk", b.dmg); b.life = 0; }
   }
   s.enemyBullets = s.enemyBullets.filter((b) => b.life > 0 && b.x > -30 && b.x < view.w + 30 && b.y > -30 && b.y < view.h + 30);
 
@@ -882,7 +1122,7 @@ function update(dt) {
   s.puddles = s.puddles.filter((pd) => pd.life > 0);
   for (const pd of s.puddles) {
     if (p.puddleCd <= 0 && p.invuln <= 0 && Math.hypot(pd.x - p.x, pd.y - p.y) < pd.r + p.r) {
-      p.hp -= 5; p.puddleCd = 0.5;
+      p.hp -= 5; p.puddleCd = 0.5; recordDmg("śluz", 5);
     }
   }
 
@@ -892,6 +1132,14 @@ function update(dt) {
 
   // pickupy (leczenie/skrzynia) z czasem życia
   for (const it of s.pickups) it.life -= dt;
+  // magnes: przyciąga jedzenie i skrzynie
+  const magR = (s.abil.magnet.lvl > 0 ? 90 + s.abil.magnet.lvl * 60 : 0) + p.pickupRange;
+  if (magR > 0) {
+    for (const it of s.pickups) {
+      const d = Math.hypot(it.x - p.x, it.y - p.y);
+      if (d < magR && d > 1) { it.x += ((p.x - it.x) / d) * 260 * dt; it.y += ((p.y - it.y) / d) * 260 * dt; }
+    }
+  }
   s.pickups = s.pickups.filter((it) => {
     if (it.life <= 0) return false;
     if (Math.hypot(it.x - p.x, it.y - p.y) < p.r + it.r) {
@@ -920,6 +1168,8 @@ function update(dt) {
 function onEnemyDeath(e) {
   const s = state;
   sfx("death");
+  spawnParticles(e.x, e.y, e.isBoss ? 28 : e.isElite ? 12 : 7, e.isBoss ? "#fca5a5" : e.isElite ? "#fbbf24" : "#f87171", e.isBoss ? 260 : 150, 0.6);
+
   if (e.passive) {
     // małpa pokonana: następna ma więcej HP + zrzuca 1-5 bananów
     s.monkeyKills++;
@@ -932,12 +1182,29 @@ function onEnemyDeath(e) {
     }
     return;
   }
+
+  // kombo → mnożnik wyniku i monet
+  s.combo++; s.comboTimer = 3;
+  const mult = 1 + Math.floor(s.combo / 5) * 0.5;
+  s.score += Math.round((e.isBoss ? 200 : e.isElite ? 30 : 10) * mult);
+  s.coins += Math.round((e.isBoss ? 60 : e.isElite ? 5 : 1) * mult * difficultyMult.coin);
+
   s.kills++;
   addXp(e.xp);
   if (e.behavior === "exploder") createExplosion(e.x, e.y, 55, 10, true);
-  const r = Math.random();
-  if (e.boss) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 14 });
-  else if (r < 0.03) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
+
+  if (e.isBoss) {
+    s.levelPhase = "cleared";
+    s.enemyBullets = [];
+    s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 22 });
+    spawnPortal();
+    return;
+  }
+  if (e.isElite) {
+    s.pickups.push({ kind: Math.random() < 0.5 ? "food" : "chest", x: e.x, y: e.y, r: 16, life: 12 });
+    return;
+  }
+  if (Math.random() < 0.03) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
 }
 
 // ===== Rysowanie =====
@@ -1021,28 +1288,37 @@ function render() {
   for (const e of s.enemies) {
     const size = e.r * 2.2;
     const flip = e.faceFlip;
-    const base = e.type === "monkey" ? S.monkey_trader : S[ENEMY_TYPES[e.type].sprite];
+    const base = e.isBoss ? S[e.def.sprite] : e.type === "monkey" ? S.monkey_trader : S[ENEMY_TYPES[e.type].sprite];
+    // aura elity
+    if (e.isElite) {
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.2 * Math.sin(s.time * 6 + e.seed);
+      ctx.fillStyle = "#fbbf24";
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     ctx.save();
     if (e.alpha < 1) ctx.globalAlpha = e.alpha;
     drawSprite(base, e.x, e.y, size, 0, flip);
     ctx.restore();
-    if (e.flash > 0 && SR[e.type]) {
+    const sr = e.isBoss ? SR[e.def.sprite] : SR[e.type];
+    if (e.flash > 0 && sr) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, e.flash / FLASH) * 0.75;
-      drawSprite(SR[e.type], e.x, e.y, size, 0, flip);
+      drawSprite(sr, e.x, e.y, size, 0, flip);
       ctx.restore();
     }
-    if (e.maxHp > 3 && e.hp < e.maxHp) {
+    if (!e.isBoss && e.maxHp > 3 && e.hp < e.maxHp) {
       const w = size * 0.9;
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.fillRect(e.x - w / 2, e.y - size / 2 - 8, w, 4);
-      ctx.fillStyle = e.boss ? "#f472b6" : "#f87171";
+      ctx.fillStyle = "#f87171";
       ctx.fillRect(e.x - w / 2, e.y - size / 2 - 8, w * (e.hp / e.maxHp), 4);
     }
   }
 
   // pociski wrogów
-  for (const b of s.enemyBullets) drawSprite(S.enemy_projectile, b.x, b.y, 26, b.a);
+  for (const b of s.enemyBullets) drawSprite(b.sprite ? S[b.sprite] : S.enemy_projectile, b.x, b.y, b.size || 26, b.a);
 
   // tornada
   for (const tn of s.tornadoes) {
@@ -1058,6 +1334,14 @@ function render() {
   for (const ef of s.effects) {
     ctx.save(); ctx.globalAlpha = Math.max(0, ef.timer / ef.max);
     drawSprite(S[ef.sprite] || S.explosion, ef.x, ef.y, ef.r * 2);
+    ctx.restore();
+  }
+
+  // cząsteczki
+  for (const pt of s.particles) {
+    ctx.save(); ctx.globalAlpha = Math.max(0, pt.life / pt.max);
+    ctx.fillStyle = pt.color;
+    ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
     ctx.restore();
   }
 
@@ -1111,6 +1395,29 @@ function render() {
   for (const f of s.fireballs) drawSprite(S.firball, f.x, f.y, 44, f.a);
 
   ctx.restore(); // shake
+
+  // noc – ciemność z latarką wokół gracza
+  if (s.event === "night") {
+    const g = ctx.createRadialGradient(p.x, p.y, 70, p.x, p.y, 280);
+    g.addColorStop(0, "rgba(0,0,12,0)");
+    g.addColorStop(1, "rgba(0,0,14,0.92)");
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); ctx.restore();
+  }
+
+  // pasek HP bossa (u góry)
+  const boss = s.enemies.find((e) => e.isBoss);
+  if (boss) {
+    const bw = Math.min(560, view.w - 80), bx = (view.w - bw) / 2, by = 56;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(bx - 2, by - 2, bw + 4, 20);
+    ctx.fillStyle = "#3f0f0f"; ctx.fillRect(bx, by, bw, 16);
+    ctx.fillStyle = boss.phase === 2 ? "#f59e0b" : "#ef4444";
+    ctx.fillRect(bx, by, bw * Math.max(0, boss.hp / boss.maxHp), 16);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(s.bossName + (boss.phase === 2 ? " — FURIA!" : ""), view.w / 2, by + 8);
+    ctx.restore();
+  }
 
   // zamrożenie – niebieska mgła
   if (s.freeze > 0) {
@@ -1191,6 +1498,12 @@ function updateHud() {
       : hpPct > 25 ? "linear-gradient(90deg,#fbbf24,#f59e0b)"
         : "linear-gradient(90deg,#f87171,#ef4444)";
   xpFill.style.width = (p.xp / p.xpNext) * 100 + "%";
+  coinsEl.textContent = s.coins;
+  if (s.combo >= 2) {
+    const mult = 1 + Math.floor(s.combo / 5) * 0.5;
+    comboEl.textContent = "KOMBO x" + s.combo + (mult > 1 ? "  (×" + mult + " pkt)" : "");
+    comboEl.classList.remove("hidden");
+  } else comboEl.classList.add("hidden");
 }
 
 // ===== Pętla =====
@@ -1216,22 +1529,65 @@ function startGame() {
   gameoverScreen.classList.add("hidden");
   levelupScreen.classList.add("hidden");
   pauseScreen.classList.add("hidden");
+  shopScreen.classList.add("hidden");
+  shopOpen = false;
   pauseBtn.classList.remove("hidden");
+  musicStart();
   requestAnimationFrame(loop);
 }
+function drawStatsChart(data) {
+  const c = statsChart, x = c.getContext("2d");
+  x.clearRect(0, 0, c.width, c.height);
+  if (!data.length) return;
+  const max = Math.max(1, ...data);
+  x.strokeStyle = "#38bdf8"; x.lineWidth = 2; x.beginPath();
+  data.forEach((v, i) => {
+    const px = (i / (data.length - 1 || 1)) * c.width;
+    const py = c.height - (v / max) * (c.height - 6) - 3;
+    i ? x.lineTo(px, py) : x.moveTo(px, py);
+  });
+  x.stroke();
+  x.lineTo(c.width, c.height); x.lineTo(0, c.height); x.closePath();
+  x.fillStyle = "rgba(56,189,248,0.15)"; x.fill();
+}
 function endGame() {
-  running = false; paused = false; pauseMenu = false; state.over = true;
+  running = false; paused = false; pauseMenu = false; shopOpen = false; state.over = true;
   pauseBtn.classList.add("hidden");
   joystickEl.classList.add("hidden"); joy.active = false;
-  finalTimeEl.textContent = state.time.toFixed(1);
-  finalKillsEl.textContent = state.kills;
+  musicStop();
+  const s = state;
+  let killer = "—", kmax = 0;
+  for (const k in s.stats.dmgBySource) if (s.stats.dmgBySource[k] > kmax) { kmax = s.stats.dmgBySource[k]; killer = k; }
+  const dps = s.time > 0 ? Math.round(s.stats.dmgDealt / s.time) : 0;
+  statsBoxEl.innerHTML =
+    `<div class="s-row"><span>Czas</span><b>${s.time.toFixed(1)}s</b></div>` +
+    `<div class="s-row"><span>Poziom</span><b>${s.glevel}</b></div>` +
+    `<div class="s-row"><span>Zabójstwa</span><b>${s.kills}</b></div>` +
+    `<div class="s-row"><span>Wynik</span><b>${s.score}</b></div>` +
+    `<div class="s-row"><span>Monety</span><b>${s.coins}</b></div>` +
+    `<div class="s-row"><span>Śr. DPS</span><b>${dps}</b></div>` +
+    `<div class="s-row"><span>Lvl gracza</span><b>${s.player.level}</b></div>` +
+    `<div class="s-row"><span>Najgroźniejszy</span><b>${killer}</b></div>`;
+  drawStatsChart(s.stats.timeline);
   const best = Number(localStorage.getItem("arena-best") || 0);
-  if (state.time > best) { localStorage.setItem("arena-best", state.time.toFixed(1)); bestEl.textContent = "🏆 Nowy rekord!"; }
-  else bestEl.textContent = "Najlepszy wynik: " + best.toFixed(1) + "s";
+  if (s.score > best) { localStorage.setItem("arena-best", s.score); bestEl.textContent = "🏆 Nowy rekord wyniku: " + s.score + "!"; }
+  else bestEl.textContent = "Najlepszy wynik: " + best;
   gameoverScreen.classList.remove("hidden");
 }
-startBtn.addEventListener("click", startGame);
+document.querySelectorAll(".diff-btn").forEach((b) => b.addEventListener("click", () => {
+  const d = b.dataset.diff;
+  if (d === "easy") difficultyMult = { hp: 0.7, dmg: 0.7, speed: 0.9, coin: 1.3, name: "Łatwy" };
+  else if (d === "hard") difficultyMult = { hp: 1.6, dmg: 1.5, speed: 1.15, coin: 0.8, name: "Hardcore" };
+  else difficultyMult = { hp: 1, dmg: 1, speed: 1, coin: 1, name: "Normalny" };
+  startGame();
+}));
 restartBtn.addEventListener("click", startGame);
+shopNextBtn.addEventListener("click", () => {
+  shopScreen.classList.add("hidden");
+  shopOpen = false; paused = false;
+  nextLevel();
+  lastTime = performance.now();
+});
 
 // ===== Pauza / dźwięk =====
 function setPause(on) {
@@ -1253,6 +1609,7 @@ pauseBtn.addEventListener("click", () => { if (pauseMenu) setPause(false); else 
 resumeBtn.addEventListener("click", () => setPause(false));
 quitBtn.addEventListener("click", () => {
   running = false; paused = false; pauseMenu = false;
+  musicStop();
   pauseScreen.classList.add("hidden");
   pauseBtn.classList.add("hidden");
   startScreen.classList.remove("hidden");
@@ -1276,11 +1633,13 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
     "player", "sword", "gun", "bomb", "explosion", "shield", "health",
     "chest", "food", "flower", "freeze", "bullet", "firball", "xp", "tornado",
     "rock", "tree", "car", "bomb_trap", "bomb_trap_effect",
-    "spiked_ball", "monkey_trader", "slime_trail",
+    "spiked_ball", "monkey_trader", "slime_trail", "magnet", "shop_keeper",
     "portal_frame", "portal_swirl", "enemy_projectile",
-    "small_enemy", "normal_enemy", "big_enemy", "boss", "slime_enemy", "lizard_enemy",
+    "small_enemy", "normal_enemy", "big_enemy", "slime_enemy", "lizard_enemy",
     "spider_enemy", "ghost_enemy", "golem_enemy", "shooting_enemy", "dino_enemy",
-    "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy",
+    "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy", "bug_enemy",
+    "boss1", "boss2", "boss3", "boss4", "boss5", "boss6", "boss7",
+    "effect1", "effect2", "effect3", "effect4", "effect5", "effect6", "effect7", "effect8", "effect9",
   ];
   const imgs = await Promise.all(names.map((n) => loadImage(`assets/${n}.png`)));
   names.forEach((n, i) => (S[n] = imgs[i]));
@@ -1288,4 +1647,5 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
   // czerwone sylwetki wszystkich typów wrogów
   for (const key in ENEMY_TYPES) SR[key] = makeTint(S[ENEMY_TYPES[key].sprite], "#ff3b3b");
   SR.monkey = makeTint(S.monkey_trader, "#ff3b3b");
+  for (let i = 1; i <= 7; i++) SR["boss" + i] = makeTint(S["boss" + i], "#ff3b3b");
 })();

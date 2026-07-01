@@ -18,6 +18,7 @@
         <div class="hud-item">🗺️ Poziom <span id="glevel">1</span></div>
         <div class="hud-item">🌊 Fala <span id="wave">1</span>/<span id="waveMax">3</span></div>
         <div class="hud-item"><img class="mini-icon" src="assets/xp.png" alt="Lvl" /> <span id="level">1</span></div>
+        <div class="hud-item">💰 <span id="coins">0</span></div>
       </div>
       <div class="bar-line">
         <img class="bar-icon" src="assets/health.png" alt="HP" />
@@ -28,6 +29,9 @@
         <div id="xpbar"><div id="xpfill"></div></div>
       </div>
     </div>
+
+    <!-- Licznik kombo -->
+    <div id="combo" class="hidden"></div>
 
     <!-- Przycisk pauzy -->
     <button id="pauseBtn" class="hidden" aria-label="Pauza">⏸</button>
@@ -51,7 +55,12 @@
         <strong>Pistolet:</strong> celuj myszką<br />
         ⚠️ Uważaj na bomby-pułapki — wybuchają!
       </p>
-      <button id="startBtn" class="btn">Graj</button>
+      <p class="diff-label">Wybierz trudność:</p>
+      <div class="diff-row">
+        <button class="btn diff-btn" data-diff="easy">😌 Łatwy</button>
+        <button class="btn diff-btn" data-diff="normal">⚔️ Normalny</button>
+        <button class="btn diff-btn" data-diff="hard">💀 Hardcore</button>
+      </div>
     </div>
 
     <!-- Ekran wyboru ulepszenia (level up) -->
@@ -69,13 +78,25 @@
       <button id="quitBtn" class="btn btn-ghost">Zakończ grę</button>
     </div>
 
+    <!-- Sklep między poziomami -->
+    <div id="shop" class="overlay hidden">
+      <h1>🛒 Sklep</h1>
+      <div class="shop-head">
+        <img src="assets/shop_keeper.png" class="shopkeeper" alt="" />
+        <p class="desc">Kup stałe ulepszenia.<br />Masz: 💰 <span id="shopCoins">0</span></p>
+      </div>
+      <div id="shopItems" class="cards-choice"></div>
+      <button id="shopNext" class="btn">Dalej ▶</button>
+    </div>
+
     <!-- Ekran końca gry -->
     <div id="gameover" class="overlay hidden">
       <h1>💀 Koniec gry</h1>
-      <p class="result">
-        Przetrwałeś <strong><span id="finalTime">0</span>s</strong><br />
-        Pokonane zombie: <strong><span id="finalKills">0</span></strong>
-      </p>
+      <div id="statsBox" class="stats-box"></div>
+      <div class="chart-wrap">
+        <div class="chart-title">Zadane obrażenia / s (DPS)</div>
+        <canvas id="statsChart" width="320" height="80"></canvas>
+      </div>
       <p id="best" class="best"></p>
       <button id="restartBtn" class="btn">Zagraj ponownie</button>
     </div>

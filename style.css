@@ -277,6 +277,58 @@ html, body {
   to { opacity: 1; }
 }
 
+/* Licznik kombo */
+#combo {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #fbbf24;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Wybór trudności */
+.diff-label { color: var(--muted); margin-top: 0.5rem; }
+.diff-row { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; max-width: 320px; }
+.diff-btn { width: 100%; }
+
+/* Sklep */
+.shop-head { display: flex; align-items: center; gap: 1rem; justify-content: center; }
+.shopkeeper { width: 72px; height: 72px; image-rendering: pixelated; }
+#shopItems { max-width: 460px; }
+.shop-card {
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.7rem 1rem; border-radius: 0.85rem;
+  background: linear-gradient(135deg, #1e293b, #263449);
+  border: 2px solid rgba(148, 163, 184, 0.25);
+  color: var(--text); text-align: left; cursor: pointer; width: 100%;
+  transition: transform 0.1s ease, border-color 0.15s ease;
+}
+.shop-card:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--accent); }
+.shop-card:disabled { opacity: 0.45; cursor: not-allowed; }
+.shop-card .s-title { font-weight: 700; }
+.shop-card .s-desc { font-size: 0.8rem; color: #94a3b8; }
+.shop-card .s-price { margin-left: auto; font-weight: 800; color: #fbbf24; white-space: nowrap; }
+
+/* Statystyki na ekranie śmierci */
+.stats-box {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.4rem;
+  max-width: 380px; font-size: 0.95rem;
+}
+.stats-box .s-row { display: flex; justify-content: space-between; gap: 0.5rem; }
+.stats-box .s-row b { color: var(--accent); }
+.chart-wrap { text-align: center; }
+.chart-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+#statsChart {
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.5rem;
+}
+
 /* Joystick */
 #joystick {
   position: absolute;
