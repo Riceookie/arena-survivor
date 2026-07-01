@@ -17,10 +17,16 @@
         <div class="hud-item">💀 <span id="kills">0</span></div>
         <div class="hud-item">🗺️ Poziom <span id="glevel">1</span></div>
         <div class="hud-item">🌊 Fala <span id="wave">1</span>/<span id="waveMax">3</span></div>
-        <div class="hud-item">⭐ <span id="level">1</span></div>
+        <div class="hud-item"><img class="mini-icon" src="assets/xp.png" alt="Lvl" /> <span id="level">1</span></div>
       </div>
-      <div id="healthbar"><div id="healthfill"></div></div>
-      <div id="xpbar"><div id="xpfill"></div></div>
+      <div class="bar-line">
+        <img class="bar-icon" src="assets/health.png" alt="HP" />
+        <div id="healthbar"><div id="healthfill"></div></div>
+      </div>
+      <div class="bar-line">
+        <img class="bar-icon" src="assets/xp.png" alt="XP" />
+        <div id="xpbar"><div id="xpfill"></div></div>
+      </div>
     </div>
 
     <!-- Wirtualny joystick (telefon) -->
@@ -39,7 +45,8 @@
       <p class="controls">
         <strong>Komputer:</strong> WASD / strzałki<br />
         <strong>Telefon:</strong> dotknij i przytrzymaj, aby sterować<br />
-        ⚠️ Uważaj na różowe kwiaty — wybuchają!
+        <strong>Pistolet:</strong> celuj myszką<br />
+        ⚠️ Uważaj na bomby-pułapki — wybuchają!
       </p>
       <button id="startBtn" class="btn">Graj</button>
     </div>

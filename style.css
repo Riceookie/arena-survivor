@@ -62,8 +62,28 @@ html, body {
   border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
+.bar-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.bar-icon {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.mini-icon {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  vertical-align: -3px;
+}
+
 #healthbar {
-  width: 100%;
+  flex: 1;
   height: 16px;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -79,7 +99,7 @@ html, body {
 }
 
 #xpbar {
-  width: 100%;
+  flex: 1;
   height: 8px;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid rgba(148, 163, 184, 0.3);

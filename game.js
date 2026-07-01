@@ -123,6 +123,7 @@ function newState() {
       freeze: { lvl: 0, cd: 0 },
       tornado: { lvl: 0, cd: 0 },
       flower: { lvl: 0, cd: 0 },
+      car: { lvl: 0, cd: 0 },
     },
     enemies: [],
     bullets: [],
@@ -133,9 +134,12 @@ function newState() {
     puddles: [],
     flowers: [],
     tornadoes: [],
+    cars: [],
     obstacles: [],
     enemyBullets: [],
     portal: null,
+    transition: null,
+    aimAng: 0,
     banner: null,
     shake: 0,
     freeze: 0,
@@ -157,6 +161,10 @@ function newState() {
 const keys = {};
 window.addEventListener("keydown", (e) => (keys[e.key.toLowerCase()] = true));
 window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+
+// ===== Wejście: mysz (celowanie) =====
+const mouse = { x: 0, y: 0, active: false };
+canvas.addEventListener("mousemove", (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
 
 // ===== Wejście: dotyk =====
 const joy = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
@@ -225,9 +233,10 @@ function genObstacles() {
     const x = 70 + Math.random() * (view.w - 140);
     const y = 100 + Math.random() * (view.h - 160);
     if (Math.hypot(x - s.player.x, y - s.player.y) < 150) continue; // nie na graczu
-    if (s.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < 90)) continue; // nie na sobie
+    if (s.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.r + 70)) continue; // nie na sobie
     const tree = Math.random() < 0.5;
-    s.obstacles.push({ x, y, r: tree ? 20 : 24, type: tree ? "tree" : "rock" });
+    const scale = 0.7 + Math.random() * 1.1; // różne rozmiary
+    s.obstacles.push({ x, y, r: (tree ? 20 : 24) * scale, scale, type: tree ? "tree" : "rock" });
   }
 }
 function resolveObstacles(e) {
@@ -305,8 +314,8 @@ function spawnEnemy(forceType) {
 }
 
 function damageEnemy(e, dmg) { e.hp -= dmg; e.flash = FLASH; }
-function createExplosion(x, y, radius, dmg, hurtPlayer) {
-  state.effects.push({ x, y, r: radius, timer: 0.45, max: 0.45 });
+function createExplosion(x, y, radius, dmg, hurtPlayer, sprite) {
+  state.effects.push({ x, y, r: radius, timer: 0.45, max: 0.45, sprite: sprite || "explosion" });
   addShake(radius > 80 ? 8 : 5);
   for (const e of state.enemies) {
     if (Math.hypot(e.x - x, e.y - y) < radius + e.r) damageEnemy(e, dmg);
@@ -347,6 +356,7 @@ function upgradePool() {
     { id: "freeze", icon: "freeze.png", title: a.freeze.lvl ? "Lepsze zamrożenie" : "Zamrożenie", desc: a.freeze.lvl ? "Częstsze / dłuższe" : "Cyklicznie zamraża wrogów", lvl: a.freeze.lvl, apply: () => (a.freeze.lvl += 1) },
     { id: "tornado", icon: "tornado.png", title: a.tornado.lvl ? "Większe tornado" : "Tornado", desc: a.tornado.lvl ? "Częstsze, silniejsze" : "Wzywa tornado tnące wrogów", lvl: a.tornado.lvl, apply: () => (a.tornado.lvl += 1) },
     { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, apply: () => (a.flower.lvl += 1) },
+    { id: "car", icon: "car.png", title: a.car.lvl ? "Szybsze auto" : "Auto", desc: a.car.lvl ? "Częstsze przejazdy" : "Auto przejeżdża i rozjeżdża wrogów", lvl: a.car.lvl, apply: () => (a.car.lvl += 1) },
   ];
   return list.filter((u) => u.show !== false);
 }
@@ -461,6 +471,18 @@ function update(dt) {
   const s = state;
   const p = s.player;
   s.time += dt;
+
+  // przejście między poziomami (portal) – zamraża rozgrywkę na czas animacji
+  if (s.transition) {
+    s.transition.t -= dt;
+    if (!s.transition.done && s.transition.t <= s.transition.max / 2) {
+      nextLevel();
+      s.transition.done = true;
+    }
+    if (s.transition.t <= 0) s.transition = null;
+    return;
+  }
+
   if (s.shake > 0) s.shake = Math.max(0, s.shake - dt * 30);
   if (s.freeze > 0) s.freeze -= dt;
   if (s.banner) { s.banner.t -= dt; if (s.banner.t <= 0) s.banner = null; }
@@ -475,11 +497,16 @@ function update(dt) {
   if (p.invuln > 0) p.invuln -= dt;
   if (p.puddleCd > 0) p.puddleCd -= dt;
 
+  // celowanie: mysz (PC) lub najbliższy wróg (telefon)
+  if (mouse.active) s.aimAng = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+  else { const t = nearestEnemy(p.x, p.y); if (t) s.aimAng = Math.atan2(t.y - p.y, t.x - p.x); }
+
   // portal aktywny? sprawdź wejście
   if (s.portal) {
     s.portal.spin += dt * 2.5;
     if (Math.hypot(s.portal.x - p.x, s.portal.y - p.y) < s.portal.r + p.r) {
-      nextLevel();
+      s.transition = { t: 1.3, max: 1.3, done: false };
+      s.portal = null;
     }
   } else {
     // spawnowanie fali
@@ -513,12 +540,9 @@ function update(dt) {
   if (a.gun.lvl > 0) {
     a.gun.cd -= dt;
     if (a.gun.cd <= 0) {
-      const t = nearestEnemy(p.x, p.y);
-      if (t) {
-        const ang = Math.atan2(t.y - p.y, t.x - p.x);
-        s.bullets.push({ x: p.x, y: p.y, vx: Math.cos(ang) * 520, vy: Math.sin(ang) * 520, dmg: 1 + a.gun.lvl, life: 1.5 });
-        a.gun.cd = Math.max(0.22, 0.9 - a.gun.lvl * 0.1);
-      }
+      const ang = s.aimAng; // strzela tam, gdzie celuje pistolet (mysz / wróg)
+      s.bullets.push({ x: p.x + Math.cos(ang) * p.r, y: p.y + Math.sin(ang) * p.r, vx: Math.cos(ang) * 560, vy: Math.sin(ang) * 560, dmg: 1 + a.gun.lvl, life: 1.5 });
+      a.gun.cd = Math.max(0.22, 0.9 - a.gun.lvl * 0.1);
     }
   }
   if (a.bomb.lvl > 0) {
@@ -561,6 +585,22 @@ function update(dt) {
       a.flower.cd = Math.max(2.5, 6 - a.flower.lvl * 0.5);
     }
   }
+  if (a.car.lvl > 0) {
+    a.car.cd -= dt;
+    if (a.car.cd <= 0) {
+      // przejeżdża w poprzek areny w kierunku, gdzie jest więcej wrogów
+      let left = 0, right = 0;
+      for (const e of s.enemies) (e.x < p.x ? left++ : right++);
+      const goRight = right >= left;
+      const cy = s.enemies.length ? p.y : p.y;
+      s.cars.push({
+        x: goRight ? -70 : view.w + 70, y: cy,
+        vx: (goRight ? 1 : -1) * 560, r: 34,
+        dmg: 8 + a.car.lvl * 3, hit: new Set(),
+      });
+      a.car.cd = Math.max(4, 10 - a.car.lvl * 0.7);
+    }
+  }
 
   // kwiaty-pułapki
   s.flowerCd -= dt;
@@ -577,7 +617,7 @@ function update(dt) {
       f.t -= dt;
       if (f.t <= 0) {
         if (f.friendly) createExplosion(f.x, f.y, f.rad, f.power, false);
-        else createExplosion(f.x, f.y, 60, 14, true);
+        else createExplosion(f.x, f.y, 60, 14, true, "bomb_trap_effect");
         f.dead = true;
       }
     }
@@ -602,6 +642,20 @@ function update(dt) {
     }
   }
   s.tornadoes = s.tornadoes.filter((tn) => tn.life > 0);
+
+  // auta (zdolność) – przejeżdżają w poprzek i rozjeżdżają wrogów
+  for (const c of s.cars) {
+    c.x += c.vx * dt;
+    for (const e of s.enemies) {
+      if (e.alpha < 0.5) continue;
+      if (!c.hit.has(e) && Math.hypot(e.x - c.x, e.y - c.y) < c.r + e.r) {
+        damageEnemy(e, c.dmg);
+        c.hit.add(e);
+        e.x += (c.vx > 0 ? 1 : -1) * 30; // odrzut
+      }
+    }
+  }
+  s.cars = s.cars.filter((c) => c.x > -100 && c.x < view.w + 100);
 
   // wrogowie
   const frozen = s.freeze > 0;
@@ -683,7 +737,6 @@ function update(dt) {
     if (it.life <= 0) return false;
     if (Math.hypot(it.x - p.x, it.y - p.y) < p.r + it.r) {
       if (it.kind === "food") p.hp = Math.min(p.maxHp, p.hp + 30);
-      else if (it.kind === "heart") p.hp = Math.min(p.maxHp, p.hp + 18);
       else if (it.kind === "chest") state.pendingLevelUps++;
       return false;
     }
@@ -709,9 +762,8 @@ function onEnemyDeath(e) {
   if (e.behavior === "exploder") createExplosion(e.x, e.y, 55, 10, true);
   const r = Math.random();
   if (e.boss) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 14 });
-  else if (r < 0.06) s.pickups.push({ kind: "food", x: e.x, y: e.y, r: 14, life: 8 });
-  else if (r < 0.12) s.pickups.push({ kind: "heart", x: e.x, y: e.y, r: 13, life: 8 });
-  else if (r < 0.14) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
+  else if (r < 0.09) s.pickups.push({ kind: "food", x: e.x, y: e.y, r: 14, life: 8 });
+  else if (r < 0.115) s.pickups.push({ kind: "chest", x: e.x, y: e.y, r: 18, life: 12 });
 }
 
 // ===== Rysowanie =====
@@ -753,7 +805,7 @@ function render() {
       alpha = 0.5 + 0.5 * Math.abs(Math.sin(s.time * 25));
     }
     ctx.save(); ctx.globalAlpha = alpha;
-    drawSprite(S.flower, f.x, f.y, 40 * scale);
+    drawSprite(f.friendly ? S.flower : S.bomb_trap, f.x, f.y, 40 * scale);
     ctx.restore();
   }
 
@@ -770,7 +822,7 @@ function render() {
     // poświata
     ctx.save();
     ctx.globalAlpha = 0.4 + 0.2 * Math.sin(s.time * 4);
-    ctx.fillStyle = "#a855f7";
+    ctx.fillStyle = "#ef4444";
     ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r + 14, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     // wirujący efekt
@@ -783,7 +835,7 @@ function render() {
   for (const it of s.pickups) {
     const bob = Math.sin(s.time * 3 + it.x) * 4;
     const blink = it.life < 2 ? Math.abs(Math.sin(s.time * 12)) : 1;
-    const img = it.kind === "food" ? S.food : it.kind === "heart" ? S.health : S.chest;
+    const img = it.kind === "food" ? S.food : S.chest;
     ctx.save(); ctx.globalAlpha = blink;
     drawSprite(img, it.x, it.y + bob, it.r * 2.4);
     ctx.restore();
@@ -825,10 +877,13 @@ function render() {
     ctx.restore();
   }
 
+  // auta
+  for (const c of s.cars) drawSprite(S.car, c.x, c.y, 80, 0, c.vx > 0);
+
   // wybuchy
   for (const ef of s.effects) {
     ctx.save(); ctx.globalAlpha = Math.max(0, ef.timer / ef.max);
-    drawSprite(S.explosion, ef.x, ef.y, ef.r * 2);
+    drawSprite(S[ef.sprite] || S.explosion, ef.x, ef.y, ef.r * 2);
     ctx.restore();
   }
 
@@ -837,6 +892,20 @@ function render() {
   if (p.invuln > 0) {
     ctx.save(); ctx.globalAlpha = 0.75;
     drawSprite(S.shield, p.x, p.y, p.r * 3.2 + Math.sin(s.time * 8) * 3);
+    ctx.restore();
+  }
+
+  // pistolet w dłoni – celuje w kursor / wroga
+  {
+    const ang = s.aimAng;
+    const gx = p.x + Math.cos(ang) * (p.r + 4);
+    const gy = p.y + Math.sin(ang) * (p.r + 4);
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(ang);
+    if (Math.abs(ang) > Math.PI / 2) ctx.scale(1, -1); // nie do góry nogami
+    ctx.imageSmoothingEnabled = false;
+    if (S.gun) ctx.drawImage(S.gun, -16, -16, 32, 32);
     ctx.restore();
   }
 
@@ -876,6 +945,31 @@ function render() {
     ctx.shadowColor = "rgba(0,0,0,0.6)";
     ctx.shadowBlur = 12;
     ctx.fillText(b.text, view.w / 2, view.h * 0.28);
+    ctx.restore();
+  }
+
+  // przejście między poziomami – czerwony wir + błysk
+  if (s.transition) {
+    const tr = s.transition;
+    const prog = 1 - tr.t / tr.max; // 0..1
+    const fade = 1 - Math.abs(prog - 0.5) * 2; // 0..1..0
+    ctx.save();
+    ctx.globalAlpha = fade * 0.9;
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(0, 0, view.w, view.h);
+    ctx.restore();
+    const sz = Math.max(view.w, view.h) * (0.3 + prog * 1.4);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    drawSprite(S.portal_swirl, view.w / 2, view.h / 2, sz, s.time * 8);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold " + Math.min(52, view.w / 11) + "px system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 12;
+    ctx.fillText("POZIOM " + s.glevel, view.w / 2, view.h / 2);
     ctx.restore();
   }
 }
@@ -943,7 +1037,8 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
   const names = [
     "player", "sword", "gun", "bomb", "explosion", "shield", "health",
     "chest", "food", "flower", "freeze", "bullet", "firball", "xp", "tornado",
-    "rock", "tree", "portal_frame", "portal_swirl", "enemy_projectile",
+    "rock", "tree", "car", "bomb_trap", "bomb_trap_effect",
+    "portal_frame", "portal_swirl", "enemy_projectile",
     "small_enemy", "normal_enemy", "big_enemy", "boss", "slime_enemy", "lizard_enemy",
     "spider_enemy", "ghost_enemy", "golem_enemy", "shooting_enemy", "dino_enemy",
     "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy",
