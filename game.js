@@ -610,12 +610,12 @@ function openLevelUp() {
 
 // ===== Sklep (stałe ulepszenia za monety) =====
 const SHOP_ITEMS = [
-  { id: "hp", title: "+30 Max HP", desc: "Trwałe zdrowie", base: 15, apply: (p) => { p.maxHp += 30; p.hp += 30; } },
-  { id: "dmg", title: "+2 Obrażenia miecza", desc: "Mocniejsza broń", base: 20, apply: (p, s) => { s.sword.damage += 2; } },
-  { id: "speed", title: "+20 Prędkość", desc: "Szybszy ruch", base: 15, apply: (p) => { p.speed += 20; } },
-  { id: "range", title: "+40 Zasięg zbierania", desc: "Przyciąga przedmioty", base: 12, apply: (p) => { p.pickupRange += 40; } },
-  { id: "regen", title: "+1 Regeneracja HP/s", desc: "Powolne leczenie", base: 30, apply: (p) => { p.regen += 1; } },
-  { id: "heal", title: "Pełne leczenie", desc: "Ulecz do pełna", base: 10, repeatCost: true, apply: (p) => { p.hp = p.maxHp; } },
+  { id: "hp", icon: "❤️", title: "+30 Max HP", desc: "Trwałe zdrowie", base: 15, apply: (p) => { p.maxHp += 30; p.hp += 30; } },
+  { id: "dmg", icon: "⚔️", title: "+2 Obrażenia", desc: "Mocniejszy miecz", base: 20, apply: (p, s) => { s.sword.damage += 2; } },
+  { id: "speed", icon: "👟", title: "+20 Prędkość", desc: "Szybszy ruch", base: 15, apply: (p) => { p.speed += 20; } },
+  { id: "range", icon: "🧲", title: "+40 Zasięg", desc: "Zbieranie przedmiotów", base: 12, apply: (p) => { p.pickupRange += 40; } },
+  { id: "regen", icon: "♻️", title: "+1 Regen HP/s", desc: "Powolne leczenie", base: 30, apply: (p) => { p.regen += 1; } },
+  { id: "heal", icon: "🍎", title: "Pełne leczenie", desc: "Ulecz do pełna", base: 10, repeatCost: true, apply: (p) => { p.hp = p.maxHp; } },
 ];
 function buildShop() {
   const s = state, p = s.player;
@@ -627,7 +627,7 @@ function buildShop() {
     const btn = document.createElement("button");
     btn.className = "shop-card";
     btn.disabled = s.coins < cost;
-    btn.innerHTML = `<div class="s-title">${it.title}</div><div class="s-desc">${it.desc}${bought ? " (x" + bought + ")" : ""}</div><div class="s-price">💰 ${cost}</div>`;
+    btn.innerHTML = `<div class="s-icon">${it.icon}</div><div class="s-title">${it.title}</div><div class="s-desc">${it.desc}${bought ? " (x" + bought + ")" : ""}</div><div class="s-price">💰 ${cost}</div>`;
     btn.addEventListener("click", () => {
       if (s.coins < cost) return;
       s.coins -= cost; s.shopBought[it.id] = bought + 1;

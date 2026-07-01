@@ -80,16 +80,20 @@
 
     <!-- Sklep między poziomami -->
     <div id="shop" class="overlay hidden">
-      <h1>🛒 Sklep</h1>
-      <div class="shop-head">
-        <div class="keeper-wrap">
-          <div id="shopSpeech" class="speech"></div>
-          <img src="assets/shop_keeper.png" class="shopkeeper" alt="" />
+      <div class="shop-panel">
+        <div class="shop-topbar">
+          <h1>🛒 Sklep</h1>
+          <div class="coins-big">💰 <span id="shopCoins">0</span></div>
         </div>
-        <p class="coins-big">💰 <span id="shopCoins">0</span></p>
+        <div class="shop-head">
+          <div class="keeper-wrap">
+            <div id="shopSpeech" class="speech"></div>
+            <img src="assets/shop_keeper.png" class="shopkeeper" alt="" />
+          </div>
+        </div>
+        <div id="shopItems" class="shop-grid"></div>
+        <button id="shopNext" class="btn">Dalej ▶</button>
       </div>
-      <div id="shopItems" class="shop-grid"></div>
-      <button id="shopNext" class="btn">Dalej ▶</button>
     </div>
 
     <!-- Ekran końca gry -->
