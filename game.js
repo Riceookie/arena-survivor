@@ -93,14 +93,16 @@ const ENEMY_TYPES = {
   robot:    { sprite: "robot_enemy",    r: 30, hp: 11, speed: 46,  xp: 6, dmg: 16, behavior: "tank" },
   devourer: { sprite: "devourer_enemy", r: 24, hp: 6,  speed: 55,  xp: 6, dmg: 14, behavior: "devour" },
   bug:      { sprite: "bug_enemy",      r: 26, hp: 9,  speed: 40,  xp: 5, dmg: 14, behavior: "tank" },
+  bug2:     { sprite: "bug_enemy2",     r: 22, hp: 5,  speed: 70,  xp: 5, dmg: 12, behavior: "charger" },
+  octopus:  { sprite: "slime_octopus_enemy", r: 24, hp: 8, speed: 48, xp: 5, dmg: 12, behavior: "trail" },
 };
 
 // jakie typy dostępne na danym poziomie (rosnąca różnorodność)
 function typePool(level) {
   const p = ["small", "normal", "big", "spider"];
   if (level >= 2) p.push("slime", "lizard", "creature");
-  if (level >= 3) p.push("ghost", "shooter", "fish");
-  if (level >= 4) p.push("dino", "demon", "golem", "bug");
+  if (level >= 3) p.push("ghost", "shooter", "fish", "octopus");
+  if (level >= 4) p.push("dino", "demon", "golem", "bug", "bug2");
   if (level >= 5) p.push("robot", "devourer");
   return p;
 }
@@ -143,6 +145,7 @@ const BOSS_DEFS = [
   { sprite: "boss5", name: "Demon Furii", r: 50, hp: 155, speed: 95, color: "#dc2626", kind: "dash" },
   { sprite: "boss6", name: "Czarny Rycerz", r: 50, hp: 175, speed: 55, color: "#cbd5e1", kind: "slash" },
   { sprite: "boss7", name: "Kogut Zagłady", r: 46, hp: 135, speed: 105, color: "#eab308", kind: "eggs" },
+  { sprite: "boss8", name: "Mroczny Mag", r: 50, hp: 175, speed: 62, color: "#c084fc", kind: "slash" },
 ];
 
 const EVENT_NAME = { slime: "🟢 Inwazja Slime'ów!", swarm: "🐝 Rój!", night: "🌙 Noc — uważaj!" };
@@ -174,8 +177,14 @@ function newState() {
       car: { lvl: 0, cd: 0 },
       flail: { lvl: 0 },
       magnet: { lvl: 0 },
+      laser: { lvl: 0, cd: 0 },
+      boomerang: { lvl: 0, cd: 0 },
+      heavy: { lvl: 0 },
+      arm: { lvl: 0, cd: 0 },
     },
     flailAngle: 0,
+    heavyAngle: 0,
+    armAng: 0,
     enemies: [],
     bullets: [],
     fireballs: [],
@@ -186,6 +195,9 @@ function newState() {
     flowers: [],
     tornadoes: [],
     cars: [],
+    lasers: [],
+    boomerangs: [],
+    slashes: [],
     particles: [],
     obstacles: [],
     enemyBullets: [],
@@ -234,6 +246,7 @@ window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
 let audioCtx = null;
 let soundOn = true;
 let lastDeath = 0;
+let lastHit = 0;
 function initAudio() {
   if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
@@ -274,6 +287,17 @@ function sfx(kind) {
     case "portal": tone(200, 0.6, "sawtooth", 0.25, 900); break;
     case "damage": noise(0.15, 0.25); tone(120, 0.18, "sawtooth", 0.2, 60); break;
     case "monkey": tone(900, 0.06, "square", 0.16, 1300); setTimeout(() => tone(1150, 0.06, "square", 0.16, 700), 80); setTimeout(() => tone(800, 0.05, "square", 0.14, 1200), 160); break;
+    case "hit": { const now = performance.now(); if (now - lastHit < 40) return; lastHit = now; tone(320, 0.04, "square", 0.05, 200); break; }
+    case "fireball": tone(300, 0.25, "sawtooth", 0.12, 90); break;
+    case "freeze": tone(1400, 0.4, "sine", 0.12, 300); break;
+    case "tornado": noise(0.3, 0.12); break;
+    case "car": tone(160, 0.4, "sawtooth", 0.14, 100); break;
+    case "bomb": tone(500, 0.1, "square", 0.1, 200); break;
+    case "shield": tone(700, 0.25, "sine", 0.14, 1100); break;
+    case "laser": tone(1200, 0.35, "sawtooth", 0.16, 200); break;
+    case "boomerang": tone(600, 0.15, "triangle", 0.12, 1000); break;
+    case "swipe": noise(0.12, 0.1); tone(500, 0.08, "square", 0.06, 900); break;
+    case "flail": tone(200, 0.12, "square", 0.08, 120); break;
   }
 }
 
@@ -519,6 +543,7 @@ function damageEnemy(e, dmg) {
   e.hp -= dmg; e.flash = FLASH;
   state.stats.dmgDealt += dmg; state.stats.bucket += dmg;
   spawnParticles(e.x, e.y, 2, "#fde047", 90, 0.3);
+  sfx("hit");
 }
 function recordDmg(src, v) {
   const m = state.stats.dmgBySource;
@@ -548,29 +573,33 @@ function addXp(n) {
   while (p.xp >= p.xpNext) {
     p.xp -= p.xpNext;
     p.level++;
-    p.xpNext = 4 + p.level * 3;
+    p.xpNext = Math.round(5 * Math.pow(1.32, p.level - 1)); // coraz więcej XP na kolejny poziom
     state.pendingLevelUps++;
   }
 }
 function upgradePool() {
   const s = state, sw = s.sword, a = s.abil;
   const list = [
-    { id: "dmg", icon: "sword.png", title: "Ostry miecz", desc: "+1 obrażeń", lvl: sw.damage, apply: () => (sw.damage += 1) },
+    { id: "dmg", icon: "sword.png", title: "Ostry miecz", desc: "+1 obrażeń", lvl: sw.damage, show: sw.damage < 20, apply: () => (sw.damage += 1) },
     { id: "count", icon: "sword.png", title: "Dodatkowy miecz", desc: "+1 wirujący miecz", lvl: sw.count, show: sw.count < 8, apply: () => (sw.count += 1) },
-    { id: "spin", icon: "sword.png", title: "Szybszy miecz", desc: "Szybszy obrót", lvl: Math.round(sw.rotSpeed), apply: () => (sw.rotSpeed += 1.4) },
-    { id: "reach", icon: "sword.png", title: "Wielki miecz", desc: "Większy zasięg i obrażenia", lvl: Math.round((sw.orbit - 54) / 18) + 1, apply: () => { sw.orbit += 18; sw.hitR += 10; sw.damage += 1; } },
-    { id: "hp", icon: "health.png", title: "Więcej życia", desc: "+25 max HP i leczy", lvl: Math.round(s.player.maxHp / 25), apply: () => { s.player.maxHp += 25; s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40); } },
-    { id: "speed", icon: "player.png", title: "Szybsze nogi", desc: "+ prędkość ruchu", lvl: Math.round((s.player.speed - 230) / 30) + 1, apply: () => (s.player.speed += 30) },
-    { id: "gun", icon: "gun.png", title: a.gun.lvl ? "Lepszy pistolet" : "Pistolet", desc: a.gun.lvl ? "Szybszy ogień" : "Auto-strzela do wrogów", lvl: a.gun.lvl, apply: () => (a.gun.lvl += 1) },
-    { id: "bomb", icon: "bomb.png", title: a.bomb.lvl ? "Więcej bomb" : "Bomby", desc: a.bomb.lvl ? "Silniejsze wybuchy" : "Rzuca wybuchające bomby", lvl: a.bomb.lvl, apply: () => (a.bomb.lvl += 1) },
-    { id: "shield", icon: "shield.png", title: a.shield.lvl ? "Lepsza tarcza" : "Tarcza", desc: a.shield.lvl ? "Częstsza ochrona" : "Cyklicznie chroni", lvl: a.shield.lvl, apply: () => (a.shield.lvl += 1) },
-    { id: "fireball", icon: "firball.png", title: a.fireball.lvl ? "Większa kula ognia" : "Kula ognia", desc: a.fireball.lvl ? "Silniejsze pociski" : "Przebijające kule ognia", lvl: a.fireball.lvl, apply: () => (a.fireball.lvl += 1) },
-    { id: "freeze", icon: "freeze.png", title: a.freeze.lvl ? "Lepsze zamrożenie" : "Zamrożenie", desc: a.freeze.lvl ? "Częstsze / dłuższe" : "Cyklicznie zamraża wrogów", lvl: a.freeze.lvl, apply: () => (a.freeze.lvl += 1) },
-    { id: "tornado", icon: "tornado.png", title: a.tornado.lvl ? "Większe tornado" : "Tornado", desc: a.tornado.lvl ? "Częstsze, silniejsze" : "Wzywa tornado tnące wrogów", lvl: a.tornado.lvl, apply: () => (a.tornado.lvl += 1) },
-    { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, apply: () => (a.flower.lvl += 1) },
-    { id: "car", icon: "car.png", title: a.car.lvl ? "Szybsze auto" : "Auto", desc: a.car.lvl ? "Częstsze przejazdy" : "Auto przejeżdża i rozjeżdża wrogów", lvl: a.car.lvl, apply: () => (a.car.lvl += 1) },
+    { id: "spin", icon: "sword.png", title: "Szybszy miecz", desc: "Szybszy obrót", lvl: Math.round(sw.rotSpeed), show: sw.rotSpeed < 16, apply: () => (sw.rotSpeed += 1.4) },
+    { id: "reach", icon: "sword.png", title: "Wielki miecz", desc: "Większy zasięg i obrażenia", lvl: Math.round((sw.orbit - 54) / 18) + 1, show: sw.orbit < 162, apply: () => { sw.orbit += 18; sw.hitR += 10; sw.damage += 1; } },
+    { id: "hp", icon: "health.png", title: "Więcej życia", desc: "+25 max HP i leczy", lvl: Math.round(s.player.maxHp / 25), show: s.player.maxHp < 400, apply: () => { s.player.maxHp += 25; s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40); } },
+    { id: "speed", icon: "player.png", title: "Szybsze nogi", desc: "+ prędkość ruchu", lvl: Math.round((s.player.speed - 230) / 30) + 1, show: s.player.speed < 470, apply: () => (s.player.speed += 30) },
+    { id: "gun", icon: "gun.png", title: a.gun.lvl ? "Lepszy pistolet" : "Pistolet", desc: a.gun.lvl ? "Szybszy ogień" : "Auto-strzela do wrogów", lvl: a.gun.lvl, show: a.gun.lvl < 8, apply: () => (a.gun.lvl += 1) },
+    { id: "bomb", icon: "bomb.png", title: a.bomb.lvl ? "Więcej bomb" : "Bomby", desc: a.bomb.lvl ? "Silniejsze wybuchy" : "Rzuca wybuchające bomby", lvl: a.bomb.lvl, show: a.bomb.lvl < 8, apply: () => (a.bomb.lvl += 1) },
+    { id: "shield", icon: "shield.png", title: a.shield.lvl ? "Lepsza tarcza" : "Tarcza", desc: a.shield.lvl ? "Częstsza ochrona" : "Cyklicznie chroni", lvl: a.shield.lvl, show: a.shield.lvl < 8, apply: () => (a.shield.lvl += 1) },
+    { id: "fireball", icon: "firball.png", title: a.fireball.lvl ? "Większa kula ognia" : "Kula ognia", desc: a.fireball.lvl ? "Silniejsze pociski" : "Przebijające kule ognia", lvl: a.fireball.lvl, show: a.fireball.lvl < 8, apply: () => (a.fireball.lvl += 1) },
+    { id: "freeze", icon: "freeze.png", title: a.freeze.lvl ? "Lepsze zamrożenie" : "Zamrożenie", desc: a.freeze.lvl ? "Częstsze / dłuższe" : "Cyklicznie zamraża wrogów", lvl: a.freeze.lvl, show: a.freeze.lvl < 8, apply: () => (a.freeze.lvl += 1) },
+    { id: "tornado", icon: "tornado.png", title: a.tornado.lvl ? "Większe tornado" : "Tornado", desc: a.tornado.lvl ? "Częstsze, silniejsze" : "Wzywa tornado tnące wrogów", lvl: a.tornado.lvl, show: a.tornado.lvl < 8, apply: () => (a.tornado.lvl += 1) },
+    { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, show: a.flower.lvl < 8, apply: () => (a.flower.lvl += 1) },
+    { id: "car", icon: "car.png", title: a.car.lvl ? "Szybsze auto" : "Auto", desc: a.car.lvl ? "Częstsze przejazdy" : "Auto przejeżdża i rozjeżdża wrogów", lvl: a.car.lvl, show: a.car.lvl < 8, apply: () => (a.car.lvl += 1) },
     { id: "flail", icon: "spiked_ball.png", title: a.flail.lvl ? "Cięższa kula" : "Kolczasta kula", desc: a.flail.lvl ? "Więcej kul / obrażeń" : "Kula na łańcuchu krąży i miażdży", lvl: a.flail.lvl, show: a.flail.lvl < 3, apply: () => (a.flail.lvl += 1) },
-    { id: "magnet", icon: "magnet.png", title: a.magnet.lvl ? "Silniejszy magnes" : "Magnes", desc: a.magnet.lvl ? "Większy zasięg zbierania" : "Przyciąga jedzenie i skrzynie", lvl: a.magnet.lvl, apply: () => (a.magnet.lvl += 1) },
+    { id: "magnet", icon: "magnet.png", title: a.magnet.lvl ? "Silniejszy magnes" : "Magnes", desc: a.magnet.lvl ? "Większy zasięg zbierania" : "Przyciąga jedzenie i skrzynie", lvl: a.magnet.lvl, show: a.magnet.lvl < 6, apply: () => (a.magnet.lvl += 1) },
+    { id: "laser", icon: "orbital_lazer.png", title: a.laser.lvl ? "Silniejszy laser" : "Orbitalny laser", desc: a.laser.lvl ? "Częstszy, silniejszy" : "Laser z nieba razi kolumnę wrogów", lvl: a.laser.lvl, show: a.laser.lvl < 8, apply: () => (a.laser.lvl += 1) },
+    { id: "boomerang", icon: "boomerang.png", title: a.boomerang.lvl ? "Lepszy bumerang" : "Bumerang", desc: a.boomerang.lvl ? "Częstszy, silniejszy" : "Leci i wraca, tnąc wrogów", lvl: a.boomerang.lvl, show: a.boomerang.lvl < 8, apply: () => (a.boomerang.lvl += 1) },
+    { id: "heavy", icon: "heavy_sword.png", title: a.heavy.lvl ? "Cięższy miecz" : "Ciężki miecz", desc: a.heavy.lvl ? "Więcej mieczy / obrażeń" : "Wolny, mocny, skierowany na zewnątrz", lvl: a.heavy.lvl, show: a.heavy.lvl < 3, apply: () => (a.heavy.lvl += 1) },
+    { id: "arm", icon: "mechanical_arm.png", title: a.arm.lvl ? "Lepsza ręka" : "Mechaniczna ręka", desc: a.arm.lvl ? "Szybsze cięcia" : "Sama celuje i tnie wrogów", lvl: a.arm.lvl, show: a.arm.lvl < 8, apply: () => (a.arm.lvl += 1) },
   ];
   return list.filter((u) => u.show !== false);
 }
@@ -631,7 +660,7 @@ function buildShop() {
     btn.addEventListener("click", () => {
       if (s.coins < cost) return;
       s.coins -= cost; s.shopBought[it.id] = bought + 1;
-      it.apply(p, s); sfx("pickup"); buildShop();
+      it.apply(p, s); sfx("pickup"); buildShop(); shopSay(BUY_LINES);
     });
     shopItemsEl.appendChild(btn);
   }
@@ -641,9 +670,14 @@ const SHOP_LINES = [
   "Poległ niejeden, ale nie Ty!", "Tego nie znajdziesz nigdzie indziej!",
   "Wydawaj, wydawaj!", "Boss nie da rady, ha!", "Może eliksir mocy?",
 ];
+const BUY_LINES = [
+  "Dobry wybór!", "Świetny zakup!", "Mądrze wydane!", "Ha, będzie się działo!",
+  "Bierz, bierz!", "Zdrowie to podstawa!", "Miła transakcja!", "Wracaj po więcej!",
+];
 let shopSpeechTimer = null;
-function shopSay() {
-  shopSpeechEl.textContent = SHOP_LINES[Math.floor(Math.random() * SHOP_LINES.length)];
+function shopSay(lines) {
+  const src = lines || SHOP_LINES;
+  shopSpeechEl.textContent = src[Math.floor(Math.random() * src.length)];
   shopSpeechEl.classList.remove("pop");
   void shopSpeechEl.offsetWidth; // restart animacji
   shopSpeechEl.classList.add("pop");
@@ -922,6 +956,17 @@ function update(dt) {
     }
   }
 
+  // ciężkie miecze (wolne, mocne, skierowane promieniście na zewnątrz, max 3)
+  const heavies = [];
+  if (s.abil.heavy.lvl > 0) {
+    s.heavyAngle += 1.3 * dt;
+    const cnt = Math.min(3, s.abil.heavy.lvl);
+    for (let i = 0; i < cnt; i++) {
+      const a = s.heavyAngle + (i * Math.PI * 2) / cnt;
+      heavies.push({ x: p.x + Math.cos(a) * 74, y: p.y + Math.sin(a) * 74 });
+    }
+  }
+
   // zdolności
   const a = s.abil;
   if (a.gun.lvl > 0) {
@@ -935,11 +980,11 @@ function update(dt) {
   }
   if (a.bomb.lvl > 0) {
     a.bomb.cd -= dt;
-    if (a.bomb.cd <= 0) { s.bombs.push({ x: p.x, y: p.y, fuse: 1.0 }); a.bomb.cd = Math.max(2, 5 - a.bomb.lvl * 0.4); }
+    if (a.bomb.cd <= 0) { s.bombs.push({ x: p.x, y: p.y, fuse: 1.0 }); a.bomb.cd = Math.max(2, 5 - a.bomb.lvl * 0.4); sfx("bomb"); }
   }
   if (a.shield.lvl > 0) {
     a.shield.cd -= dt;
-    if (a.shield.cd <= 0) { p.invuln = 1.5 + a.shield.lvl * 0.3; a.shield.cd = Math.max(4, 9 - a.shield.lvl) + p.invuln; }
+    if (a.shield.cd <= 0) { p.invuln = 1.5 + a.shield.lvl * 0.3; a.shield.cd = Math.max(4, 9 - a.shield.lvl) + p.invuln; sfx("shield"); }
   }
   if (a.fireball.lvl > 0) {
     a.fireball.cd -= dt;
@@ -949,18 +994,56 @@ function update(dt) {
         const ang = Math.atan2(t.y - p.y, t.x - p.x);
         s.fireballs.push({ x: p.x, y: p.y, vx: Math.cos(ang) * 340, vy: Math.sin(ang) * 340, a: ang, dmg: 3 + a.fireball.lvl * 2, life: 2.2, hit: new Set() });
         a.fireball.cd = Math.max(1.5, 4 - a.fireball.lvl * 0.3);
+        sfx("fireball");
       }
     }
   }
   if (a.freeze.lvl > 0) {
     a.freeze.cd -= dt;
-    if (a.freeze.cd <= 0) { s.freeze = 1.5 + a.freeze.lvl * 0.4; a.freeze.cd = Math.max(5, 12 - a.freeze.lvl) + s.freeze; }
+    if (a.freeze.cd <= 0) { s.freeze = 1.5 + a.freeze.lvl * 0.4; a.freeze.cd = Math.max(5, 12 - a.freeze.lvl) + s.freeze; sfx("freeze"); }
   }
   if (a.tornado.lvl > 0) {
     a.tornado.cd -= dt;
     if (a.tornado.cd <= 0) {
       { const tl = 4 + a.tornado.lvl * 0.6; s.tornadoes.push({ x: p.x, y: p.y, r: 46 + a.tornado.lvl * 6, life: tl, maxLife: tl, dmg: 2 + a.tornado.lvl, spin: 0, hitCd: 0 }); }
       a.tornado.cd = Math.max(3, 8 - a.tornado.lvl * 0.6);
+      sfx("tornado");
+    }
+  }
+  // orbital laser – spada na najbliższego wroga, rani wszystkich w kolumnie
+  if (a.laser.lvl > 0) {
+    a.laser.cd -= dt;
+    if (a.laser.cd <= 0) {
+      const t = nearestEnemy(p.x, p.y);
+      if (t) {
+        s.lasers.push({ x: t.x, life: 0.9, max: 0.9, width: 24 + a.laser.lvl * 6, dmg: 4 + a.laser.lvl * 2, hitCd: 0 });
+        a.laser.cd = Math.max(2.5, 6 - a.laser.lvl * 0.5);
+        sfx("laser");
+      }
+    }
+  }
+  // bumerang – leci do najbliższego wroga i wraca
+  if (a.boomerang.lvl > 0) {
+    a.boomerang.cd -= dt;
+    if (a.boomerang.cd <= 0) {
+      const t = nearestEnemy(p.x, p.y);
+      const ang = t ? Math.atan2(t.y - p.y, t.x - p.x) : s.aimAng;
+      s.boomerangs.push({ dx: Math.cos(ang), dy: Math.sin(ang), t: 0, T: 1.1, range: 230 + a.boomerang.lvl * 30, dmg: 3 + a.boomerang.lvl * 2, spin: 0, x: p.x, y: p.y, hit: new Set() });
+      a.boomerang.cd = Math.max(1.8, 5 - a.boomerang.lvl * 0.4);
+      sfx("boomerang");
+    }
+  }
+  // mechaniczna ręka – celuje sama w najbliższego wroga i tnie
+  if (a.arm.lvl > 0) {
+    const t = nearestEnemy(p.x, p.y);
+    if (t) s.armAng = Math.atan2(t.y - p.y, t.x - p.x);
+    a.arm.cd -= dt;
+    if (a.arm.cd <= 0 && t) {
+      const ang = s.armAng;
+      const sx = p.x + Math.cos(ang) * (p.r + 20), sy = p.y + Math.sin(ang) * (p.r + 20);
+      s.slashes.push({ x: sx, y: sy, a: ang, life: 0.22, max: 0.22, r: 40 + a.arm.lvl * 4, dmg: 3 + a.arm.lvl * 2, hit: new Set() });
+      a.arm.cd = Math.max(0.5, 1.1 - a.arm.lvl * 0.08);
+      sfx("swipe");
     }
   }
   if (a.flower.lvl > 0) {
@@ -987,6 +1070,7 @@ function update(dt) {
         dmg: 8 + a.car.lvl * 3, hit: new Set(),
       });
       a.car.cd = Math.max(4, 10 - a.car.lvl * 0.7);
+      sfx("car");
     }
   }
 
@@ -995,7 +1079,7 @@ function update(dt) {
   if (s.flowerCd <= 0 && s.flowers.length < 5) {
     const fx = 60 + Math.random() * (view.w - 120);
     const fy = 90 + Math.random() * (view.h - 150);
-    if (Math.hypot(fx - p.x, fy - p.y) > 120) s.flowers.push({ x: fx, y: fy, state: "idle", t: 0, friendly: false });
+    if (Math.hypot(fx - p.x, fy - p.y) > 120) s.flowers.push({ x: fx, y: fy, state: "idle", t: 0, friendly: false, age: 0 });
     s.flowerCd = 3 + Math.random() * 3;
   }
 
@@ -1013,6 +1097,7 @@ function update(dt) {
     s.foodCd = 16 + Math.random() * 12;
   }
   for (const f of s.flowers) {
+    f.age = (f.age || 0) + dt;
     if (f.state === "idle") {
       if (Math.hypot(f.x - p.x, f.y - p.y) < 78) { f.state = "arming"; f.t = 0.7; }
     } else if (f.state === "arming") {
@@ -1028,7 +1113,7 @@ function update(dt) {
 
   // tornada (zdolność) – dryfują ku wrogom i tną
   for (const tn of s.tornadoes) {
-    tn.life -= dt; tn.spin += dt * 12;
+    tn.life -= dt; tn.spin -= dt * 12; // kręci się w drugą stronę
     spawnParticles(tn.x, tn.y, 1, "#e0f2fe", 60, 0.3);
     const t = nearestEnemy(tn.x, tn.y);
     if (t) {
@@ -1061,6 +1146,43 @@ function update(dt) {
   }
   s.cars = s.cars.filter((c) => c.x > -100 && c.x < view.w + 100);
 
+  // orbital lasery – rażą wrogów w kolumnie
+  for (const lz of s.lasers) {
+    lz.life -= dt; lz.hitCd -= dt;
+    if (lz.hitCd <= 0) {
+      for (const e of s.enemies) {
+        if (e.alpha < 0.5) continue;
+        if (Math.abs(e.x - lz.x) < lz.width + e.r) damageEnemy(e, lz.dmg);
+      }
+      lz.hitCd = 0.12;
+    }
+  }
+  s.lasers = s.lasers.filter((lz) => lz.life > 0);
+
+  // bumerangi – lecą i wracają
+  for (const bm of s.boomerangs) {
+    bm.t += dt; bm.spin += dt * 16;
+    const dist = Math.sin(Math.min(1, bm.t / bm.T) * Math.PI) * bm.range;
+    bm.x = p.x + bm.dx * dist; bm.y = p.y + bm.dy * dist;
+    for (const e of s.enemies) {
+      if (e.alpha < 0.5) continue;
+      const near = Math.hypot(e.x - bm.x, e.y - bm.y) < e.r + 18;
+      if (near && !bm.hit.has(e)) { damageEnemy(e, bm.dmg); bm.hit.add(e); }
+      else if (!near) bm.hit.delete(e); // może trafić ponownie w drodze powrotnej
+    }
+  }
+  s.boomerangs = s.boomerangs.filter((bm) => bm.t < bm.T);
+
+  // cięcia mechanicznej ręki
+  for (const sl of s.slashes) {
+    sl.life -= dt;
+    for (const e of s.enemies) {
+      if (e.alpha < 0.5) continue;
+      if (!sl.hit.has(e) && Math.hypot(e.x - sl.x, e.y - sl.y) < sl.r + e.r) { damageEnemy(e, sl.dmg); sl.hit.add(e); }
+    }
+  }
+  s.slashes = s.slashes.filter((sl) => sl.life > 0);
+
   // wrogowie
   const frozen = s.freeze > 0;
   for (const e of s.enemies) {
@@ -1089,6 +1211,16 @@ function update(dt) {
           e.flailCd = 0.35;
           const kd = Math.hypot(fl.x - e.x, fl.y - e.y) || 1;
           e.x += ((e.x - fl.x) / kd) * 18; e.y += ((e.y - fl.y) / kd) * 18;
+          break;
+        }
+      }
+      // ciężkie miecze (używają e.hitCd, mocne)
+      for (const hv of heavies) {
+        if (e.hitCd <= 0 && Math.hypot(hv.x - e.x, hv.y - e.y) < 34 + e.r) {
+          damageEnemy(e, 4 + s.abil.heavy.lvl * 3);
+          e.hitCd = 0.4;
+          const kd = Math.hypot(hv.x - e.x, hv.y - e.y) || 1;
+          e.x += ((e.x - hv.x) / kd) * 24; e.y += ((e.y - hv.y) / kd) * 24;
           break;
         }
       }
@@ -1260,6 +1392,12 @@ function render() {
       scale = 1 + prog * 0.7;
       alpha = 0.5 + 0.5 * Math.abs(Math.sin(s.time * 25));
     }
+    // animacja pojawiania (pop-in z lekkim przeskoczeniem – easeOutBack)
+    const age = f.age || 0;
+    if (age < 0.3) {
+      const gp = age / 0.3, u = gp - 1;
+      scale *= 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+    }
     ctx.save(); ctx.globalAlpha = alpha;
     drawSprite(f.friendly ? S.flower : S.bomb_trap, f.x, f.y, 40 * scale);
     ctx.restore();
@@ -1348,6 +1486,29 @@ function render() {
   // auta
   for (const c of s.cars) drawSprite(S.car, c.x, c.y, 80, 0, c.vx > 0);
 
+  // orbital lasery – pionowa wiązka (cienki→gruby→cienki)
+  for (const lz of s.lasers) {
+    const prog = 1 - lz.life / lz.max;
+    const w = lz.width * 2 * (0.35 + 0.65 * Math.sin(Math.min(1, prog) * Math.PI));
+    ctx.save();
+    ctx.globalAlpha = 0.9 * Math.min(1, lz.life / 0.18);
+    ctx.imageSmoothingEnabled = false;
+    if (S.orbital_lazer) ctx.drawImage(S.orbital_lazer, lz.x - w / 2, 0, w, view.h);
+    ctx.restore();
+  }
+
+  // bumerangi
+  for (const bm of s.boomerangs) drawSprite(S.boomerang, bm.x, bm.y, 34, bm.spin);
+
+  // cięcia mechanicznej ręki
+  for (const sl of s.slashes) {
+    const prog = 1 - sl.life / sl.max;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, sl.life / sl.max);
+    drawSprite(S.slash_arm, sl.x, sl.y, sl.r * 2 * (0.6 + prog * 0.7), sl.a + prog * 1.4);
+    ctx.restore();
+  }
+
   // wybuchy
   for (const ef of s.effects) {
     ctx.save(); ctx.globalAlpha = Math.max(0, ef.timer / ef.max);
@@ -1398,6 +1559,28 @@ function render() {
       ctx.restore();
       drawSprite(S.spiked_ball, bx, by, 40, s.flailAngle * 2);
     }
+  }
+
+  // ciężkie miecze (skierowane ostrzem na zewnątrz)
+  if (s.abil.heavy.lvl > 0) {
+    const cnt = Math.min(3, s.abil.heavy.lvl);
+    for (let i = 0; i < cnt; i++) {
+      const a = s.heavyAngle + (i * Math.PI * 2) / cnt;
+      drawSprite(S.heavy_sword, p.x + Math.cos(a) * 74, p.y + Math.sin(a) * 74, 54, a + Math.PI / 2);
+    }
+  }
+
+  // mechaniczna ręka (celuje sama)
+  if (s.abil.arm.lvl > 0) {
+    const ang = s.armAng;
+    const gx = p.x + Math.cos(ang) * (p.r + 8), gy = p.y + Math.sin(ang) * (p.r + 8);
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(ang);
+    if (Math.abs(ang) > Math.PI / 2) ctx.scale(1, -1);
+    ctx.imageSmoothingEnabled = false;
+    if (S.mechanical_arm) ctx.drawImage(S.mechanical_arm, -22, -16, 44, 32);
+    ctx.restore();
   }
 
   // miecze
@@ -1653,11 +1836,13 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
     "chest", "food", "flower", "freeze", "bullet", "firball", "xp", "tornado",
     "rock", "tree", "car", "bomb_trap", "bomb_trap_effect",
     "spiked_ball", "monkey_trader", "slime_trail", "magnet", "shop_keeper",
+    "boomerang", "heavy_sword", "mechanical_arm", "orbital_lazer", "slash_arm",
     "portal_frame", "portal_swirl", "enemy_projectile",
     "small_enemy", "normal_enemy", "big_enemy", "slime_enemy", "lizard_enemy",
     "spider_enemy", "ghost_enemy", "golem_enemy", "shooting_enemy", "dino_enemy",
-    "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy", "bug_enemy",
-    "boss1", "boss2", "boss3", "boss4", "boss5", "boss6", "boss7",
+    "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy",
+    "bug_enemy", "bug_enemy2", "slime_octopus_enemy",
+    "boss1", "boss2", "boss3", "boss4", "boss5", "boss6", "boss7", "boss8",
     "effect1", "effect2", "effect3", "effect4", "effect5", "effect6", "effect7", "effect8", "effect9",
   ];
   const imgs = await Promise.all(names.map((n) => loadImage(`assets/${n}.png`)));
@@ -1666,5 +1851,5 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
   // czerwone sylwetki wszystkich typów wrogów
   for (const key in ENEMY_TYPES) SR[key] = makeTint(S[ENEMY_TYPES[key].sprite], "#ff3b3b");
   SR.monkey = makeTint(S.monkey_trader, "#ff3b3b");
-  for (let i = 1; i <= 7; i++) SR["boss" + i] = makeTint(S["boss" + i], "#ff3b3b");
+  for (let i = 1; i <= 8; i++) SR["boss" + i] = makeTint(S["boss" + i], "#ff3b3b");
 })();
