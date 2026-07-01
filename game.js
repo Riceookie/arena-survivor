@@ -33,6 +33,7 @@ const shopScreen = document.getElementById("shop");
 const shopItemsEl = document.getElementById("shopItems");
 const shopCoinsEl = document.getElementById("shopCoins");
 const shopNextBtn = document.getElementById("shopNext");
+const shopSpeechEl = document.getElementById("shopSpeech");
 
 // --- Joystick ---
 const joystickEl = document.getElementById("joystick");
@@ -626,7 +627,7 @@ function buildShop() {
     const btn = document.createElement("button");
     btn.className = "shop-card";
     btn.disabled = s.coins < cost;
-    btn.innerHTML = `<div><div class="s-title">${it.title}</div><div class="s-desc">${it.desc}${bought ? " (x" + bought + ")" : ""}</div></div><div class="s-price">💰 ${cost}</div>`;
+    btn.innerHTML = `<div class="s-title">${it.title}</div><div class="s-desc">${it.desc}${bought ? " (x" + bought + ")" : ""}</div><div class="s-price">💰 ${cost}</div>`;
     btn.addEventListener("click", () => {
       if (s.coins < cost) return;
       s.coins -= cost; s.shopBought[it.id] = bought + 1;
@@ -635,10 +636,25 @@ function buildShop() {
     shopItemsEl.appendChild(btn);
   }
 }
+const SHOP_LINES = [
+  "Witaj, wędrowcze!", "Świeży towar!", "Za monety kupisz potęgę!",
+  "Poległ niejeden, ale nie Ty!", "Tego nie znajdziesz nigdzie indziej!",
+  "Wydawaj, wydawaj!", "Boss nie da rady, ha!", "Może eliksir mocy?",
+];
+let shopSpeechTimer = null;
+function shopSay() {
+  shopSpeechEl.textContent = SHOP_LINES[Math.floor(Math.random() * SHOP_LINES.length)];
+  shopSpeechEl.classList.remove("pop");
+  void shopSpeechEl.offsetWidth; // restart animacji
+  shopSpeechEl.classList.add("pop");
+}
 function openShop() {
   shopOpen = true; paused = true;
   buildShop();
   shopScreen.classList.remove("hidden");
+  shopSay();
+  if (shopSpeechTimer) clearInterval(shopSpeechTimer);
+  shopSpeechTimer = setInterval(shopSay, 3500);
 }
 
 // ===== Bossowie =====
@@ -943,7 +959,7 @@ function update(dt) {
   if (a.tornado.lvl > 0) {
     a.tornado.cd -= dt;
     if (a.tornado.cd <= 0) {
-      s.tornadoes.push({ x: p.x, y: p.y, r: 46 + a.tornado.lvl * 6, life: 4 + a.tornado.lvl * 0.6, dmg: 2 + a.tornado.lvl, spin: 0, hitCd: 0 });
+      { const tl = 4 + a.tornado.lvl * 0.6; s.tornadoes.push({ x: p.x, y: p.y, r: 46 + a.tornado.lvl * 6, life: tl, maxLife: tl, dmg: 2 + a.tornado.lvl, spin: 0, hitCd: 0 }); }
       a.tornado.cd = Math.max(3, 8 - a.tornado.lvl * 0.6);
     }
   }
@@ -1320,10 +1336,12 @@ function render() {
   // pociski wrogów
   for (const b of s.enemyBullets) drawSprite(b.sprite ? S[b.sprite] : S.enemy_projectile, b.x, b.y, b.size || 26, b.a);
 
-  // tornada
+  // tornada – rosną i kurczą się (mały → duży → mały)
   for (const tn of s.tornadoes) {
+    const prog = tn.maxLife ? 1 - tn.life / tn.maxLife : 0.5;
+    const scale = 0.25 + 0.75 * Math.sin(Math.max(0, Math.min(1, prog)) * Math.PI);
     ctx.save(); ctx.globalAlpha = 0.85;
-    drawSprite(S.tornado, tn.x, tn.y, tn.r * 2, tn.spin);
+    drawSprite(S.tornado, tn.x, tn.y, tn.r * 2 * scale, tn.spin);
     ctx.restore();
   }
 
@@ -1407,7 +1425,7 @@ function render() {
   // pasek HP bossa (u góry)
   const boss = s.enemies.find((e) => e.isBoss);
   if (boss) {
-    const bw = Math.min(560, view.w - 80), bx = (view.w - bw) / 2, by = 56;
+    const bw = Math.min(560, view.w - 80), bx = (view.w - bw) / 2, by = view.h - 42;
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(bx - 2, by - 2, bw + 4, 20);
     ctx.fillStyle = "#3f0f0f"; ctx.fillRect(bx, by, bw, 16);
@@ -1583,6 +1601,7 @@ document.querySelectorAll(".diff-btn").forEach((b) => b.addEventListener("click"
 }));
 restartBtn.addEventListener("click", startGame);
 shopNextBtn.addEventListener("click", () => {
+  if (shopSpeechTimer) { clearInterval(shopSpeechTimer); shopSpeechTimer = null; }
   shopScreen.classList.add("hidden");
   shopOpen = false; paused = false;
   nextLevel();

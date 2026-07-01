@@ -82,10 +82,13 @@
     <div id="shop" class="overlay hidden">
       <h1>🛒 Sklep</h1>
       <div class="shop-head">
-        <img src="assets/shop_keeper.png" class="shopkeeper" alt="" />
-        <p class="desc">Kup stałe ulepszenia.<br />Masz: 💰 <span id="shopCoins">0</span></p>
+        <div class="keeper-wrap">
+          <div id="shopSpeech" class="speech"></div>
+          <img src="assets/shop_keeper.png" class="shopkeeper" alt="" />
+        </div>
+        <p class="coins-big">💰 <span id="shopCoins">0</span></p>
       </div>
-      <div id="shopItems" class="cards-choice"></div>
+      <div id="shopItems" class="shop-grid"></div>
       <button id="shopNext" class="btn">Dalej ▶</button>
     </div>
 
