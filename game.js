@@ -121,6 +121,8 @@ function newState() {
       shield: { lvl: 0, cd: 0 },
       fireball: { lvl: 0, cd: 0 },
       freeze: { lvl: 0, cd: 0 },
+      tornado: { lvl: 0, cd: 0 },
+      flower: { lvl: 0, cd: 0 },
     },
     enemies: [],
     bullets: [],
@@ -130,6 +132,8 @@ function newState() {
     pickups: [],
     puddles: [],
     flowers: [],
+    tornadoes: [],
+    obstacles: [],
     enemyBullets: [],
     portal: null,
     banner: null,
@@ -211,6 +215,34 @@ function difficulty() {
   const g = (state.glevel - 1) * state.wavesInLevel + state.wave;
   return { hp: 1 + g * 0.1, speed: 1 + g * 0.012, dmg: 1 + g * 0.03 };
 }
+function genObstacles() {
+  const s = state;
+  s.obstacles = [];
+  const count = Math.min(7, 3 + s.glevel);
+  let tries = 0;
+  while (s.obstacles.length < count && tries < 200) {
+    tries++;
+    const x = 70 + Math.random() * (view.w - 140);
+    const y = 100 + Math.random() * (view.h - 160);
+    if (Math.hypot(x - s.player.x, y - s.player.y) < 150) continue; // nie na graczu
+    if (s.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < 90)) continue; // nie na sobie
+    const tree = Math.random() < 0.5;
+    s.obstacles.push({ x, y, r: tree ? 20 : 24, type: tree ? "tree" : "rock" });
+  }
+}
+function resolveObstacles(e) {
+  for (const o of state.obstacles) {
+    let dx = e.x - o.x, dy = e.y - o.y;
+    let d = Math.hypot(dx, dy);
+    const min = e.r + o.r;
+    if (d < min) {
+      if (d < 0.001) { dx = 0; dy = -1; d = 1; } // dokładnie w środku -> pchnij w górę
+      e.x = o.x + (dx / d) * min;
+      e.y = o.y + (dy / d) * min;
+    }
+  }
+}
+
 function startWave() {
   const s = state;
   s.toSpawn = 5 + s.wave * 2 + s.glevel * 3;
@@ -229,6 +261,7 @@ function nextLevel() {
   s.puddles = [];
   s.player.hp = Math.min(s.player.maxHp, s.player.hp + s.player.maxHp * 0.35);
   s.banner = { text: "POZIOM " + s.glevel, t: 2.2, max: 2.2 };
+  genObstacles();
   startWave();
 }
 function spawnPortal() {
@@ -304,14 +337,16 @@ function upgradePool() {
     { id: "dmg", icon: "sword.png", title: "Ostry miecz", desc: "+1 obrażeń", lvl: sw.damage, apply: () => (sw.damage += 1) },
     { id: "count", icon: "sword.png", title: "Dodatkowy miecz", desc: "+1 wirujący miecz", lvl: sw.count, show: sw.count < 8, apply: () => (sw.count += 1) },
     { id: "spin", icon: "sword.png", title: "Szybszy miecz", desc: "Szybszy obrót", lvl: Math.round(sw.rotSpeed), apply: () => (sw.rotSpeed += 1.4) },
-    { id: "scythe", icon: "scythe.png", title: "Kosa", desc: "Większy zasięg i obrażenia", lvl: 0, show: sw.sprite !== "scythe", apply: () => { sw.sprite = "scythe"; sw.orbit += 22; sw.hitR += 12; sw.damage += 1; } },
+    { id: "reach", icon: "sword.png", title: "Wielki miecz", desc: "Większy zasięg i obrażenia", lvl: Math.round((sw.orbit - 54) / 18) + 1, apply: () => { sw.orbit += 18; sw.hitR += 10; sw.damage += 1; } },
     { id: "hp", icon: "health.png", title: "Więcej życia", desc: "+25 max HP i leczy", lvl: Math.round(s.player.maxHp / 25), apply: () => { s.player.maxHp += 25; s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40); } },
     { id: "speed", icon: "player.png", title: "Szybsze nogi", desc: "+ prędkość ruchu", lvl: Math.round((s.player.speed - 230) / 30) + 1, apply: () => (s.player.speed += 30) },
     { id: "gun", icon: "gun.png", title: a.gun.lvl ? "Lepszy pistolet" : "Pistolet", desc: a.gun.lvl ? "Szybszy ogień" : "Auto-strzela do wrogów", lvl: a.gun.lvl, apply: () => (a.gun.lvl += 1) },
     { id: "bomb", icon: "bomb.png", title: a.bomb.lvl ? "Więcej bomb" : "Bomby", desc: a.bomb.lvl ? "Silniejsze wybuchy" : "Rzuca wybuchające bomby", lvl: a.bomb.lvl, apply: () => (a.bomb.lvl += 1) },
     { id: "shield", icon: "shield.png", title: a.shield.lvl ? "Lepsza tarcza" : "Tarcza", desc: a.shield.lvl ? "Częstsza ochrona" : "Cyklicznie chroni", lvl: a.shield.lvl, apply: () => (a.shield.lvl += 1) },
-    { id: "fireball", icon: "fireball.gif", title: a.fireball.lvl ? "Większa kula ognia" : "Kula ognia", desc: a.fireball.lvl ? "Silniejsze pociski" : "Przebijające kule ognia", lvl: a.fireball.lvl, apply: () => (a.fireball.lvl += 1) },
+    { id: "fireball", icon: "firball.png", title: a.fireball.lvl ? "Większa kula ognia" : "Kula ognia", desc: a.fireball.lvl ? "Silniejsze pociski" : "Przebijające kule ognia", lvl: a.fireball.lvl, apply: () => (a.fireball.lvl += 1) },
     { id: "freeze", icon: "freeze.png", title: a.freeze.lvl ? "Lepsze zamrożenie" : "Zamrożenie", desc: a.freeze.lvl ? "Częstsze / dłuższe" : "Cyklicznie zamraża wrogów", lvl: a.freeze.lvl, apply: () => (a.freeze.lvl += 1) },
+    { id: "tornado", icon: "tornado.png", title: a.tornado.lvl ? "Większe tornado" : "Tornado", desc: a.tornado.lvl ? "Częstsze, silniejsze" : "Wzywa tornado tnące wrogów", lvl: a.tornado.lvl, apply: () => (a.tornado.lvl += 1) },
+    { id: "flower", icon: "flower.png", title: a.flower.lvl ? "Więcej kwiatów" : "Wybuchowe kwiaty", desc: a.flower.lvl ? "Częstsze, silniejsze" : "Sadzi wybuchające kwiaty przy wrogach", lvl: a.flower.lvl, apply: () => (a.flower.lvl += 1) },
   ];
   return list.filter((u) => u.show !== false);
 }
@@ -436,6 +471,7 @@ function update(dt) {
   p.y += mv.y * p.speed * dt;
   p.x = Math.max(p.r, Math.min(view.w - p.r, p.x));
   p.y = Math.max(p.r, Math.min(view.h - p.r, p.y));
+  resolveObstacles(p);
   if (p.invuln > 0) p.invuln -= dt;
   if (p.puddleCd > 0) p.puddleCd -= dt;
 
@@ -508,6 +544,23 @@ function update(dt) {
     a.freeze.cd -= dt;
     if (a.freeze.cd <= 0) { s.freeze = 1.5 + a.freeze.lvl * 0.4; a.freeze.cd = Math.max(5, 12 - a.freeze.lvl) + s.freeze; }
   }
+  if (a.tornado.lvl > 0) {
+    a.tornado.cd -= dt;
+    if (a.tornado.cd <= 0) {
+      s.tornadoes.push({ x: p.x, y: p.y, r: 46 + a.tornado.lvl * 6, life: 4 + a.tornado.lvl * 0.6, dmg: 2 + a.tornado.lvl, spin: 0, hitCd: 0 });
+      a.tornado.cd = Math.max(3, 8 - a.tornado.lvl * 0.6);
+    }
+  }
+  if (a.flower.lvl > 0) {
+    a.flower.cd -= dt;
+    if (a.flower.cd <= 0) {
+      const t = nearestEnemy(p.x, p.y);
+      const fx = t ? t.x : p.x + (Math.random() - 0.5) * 160;
+      const fy = t ? t.y : p.y + (Math.random() - 0.5) * 160;
+      s.flowers.push({ x: fx, y: fy, state: "arming", t: 0.8, friendly: true, power: 5 + a.flower.lvl * 2, rad: 50 + a.flower.lvl * 8 });
+      a.flower.cd = Math.max(2.5, 6 - a.flower.lvl * 0.5);
+    }
+  }
 
   // kwiaty-pułapki
   s.flowerCd -= dt;
@@ -522,10 +575,33 @@ function update(dt) {
       if (Math.hypot(f.x - p.x, f.y - p.y) < 78) { f.state = "arming"; f.t = 0.7; }
     } else if (f.state === "arming") {
       f.t -= dt;
-      if (f.t <= 0) { createExplosion(f.x, f.y, 60, 14, true); f.dead = true; }
+      if (f.t <= 0) {
+        if (f.friendly) createExplosion(f.x, f.y, f.rad, f.power, false);
+        else createExplosion(f.x, f.y, 60, 14, true);
+        f.dead = true;
+      }
     }
   }
   s.flowers = s.flowers.filter((f) => !f.dead);
+
+  // tornada (zdolność) – dryfują ku wrogom i tną
+  for (const tn of s.tornadoes) {
+    tn.life -= dt; tn.spin += dt * 12;
+    const t = nearestEnemy(tn.x, tn.y);
+    if (t) {
+      const dx = t.x - tn.x, dy = t.y - tn.y, d = Math.hypot(dx, dy) || 1;
+      tn.x += (dx / d) * 95 * dt; tn.y += (dy / d) * 95 * dt;
+    }
+    tn.hitCd -= dt;
+    if (tn.hitCd <= 0) {
+      for (const e of s.enemies) {
+        if (e.alpha < 0.5) continue;
+        if (Math.hypot(e.x - tn.x, e.y - tn.y) < tn.r + e.r) damageEnemy(e, tn.dmg);
+      }
+      tn.hitCd = 0.25;
+    }
+  }
+  s.tornadoes = s.tornadoes.filter((tn) => tn.life > 0);
 
   // wrogowie
   const frozen = s.freeze > 0;
@@ -534,6 +610,7 @@ function update(dt) {
     if (e.flash > 0) e.flash -= dt;
     if (!frozen) updateEnemy(e, dt, p);
     else if (e.behavior === "phase") e.alpha = 0.6; // widoczny gdy zamrożony
+    resolveObstacles(e);
 
     const inv = e.alpha < 0.5; // duch nietykalny w fazie
     // miecze
@@ -680,6 +757,13 @@ function render() {
     ctx.restore();
   }
 
+  // przeszkody
+  for (const o of s.obstacles) {
+    const size = o.type === "tree" ? 74 : 58;
+    const yoff = o.type === "tree" ? -14 : 0;
+    drawSprite(o.type === "tree" ? S.tree : S.rock, o.x, o.y + yoff, size);
+  }
+
   // portal (animowany)
   if (s.portal) {
     const pr = s.portal;
@@ -732,7 +816,14 @@ function render() {
   }
 
   // pociski wrogów
-  for (const b of s.enemyBullets) drawSprite(S.firball, b.x, b.y, 26, b.a);
+  for (const b of s.enemyBullets) drawSprite(S.enemy_projectile, b.x, b.y, 26, b.a);
+
+  // tornada
+  for (const tn of s.tornadoes) {
+    ctx.save(); ctx.globalAlpha = 0.85;
+    drawSprite(S.tornado, tn.x, tn.y, tn.r * 2, tn.spin);
+    ctx.restore();
+  }
 
   // wybuchy
   for (const ef of s.effects) {
@@ -759,7 +850,7 @@ function render() {
   for (const b of s.bullets) drawSprite(S.bullet, b.x, b.y, 18, Math.atan2(b.vy, b.vx));
 
   // kule ognia
-  for (const f of s.fireballs) drawSprite(S.fireball, f.x, f.y, 44, f.a);
+  for (const f of s.fireballs) drawSprite(S.firball, f.x, f.y, 44, f.a);
 
   ctx.restore(); // shake
 
@@ -821,6 +912,7 @@ function loop(now) {
 function startGame() {
   resize();
   state = newState();
+  genObstacles();
   startWave();
   running = true; paused = false;
   lastTime = performance.now();
@@ -849,16 +941,15 @@ window.__debug = { S, SR, getState: () => state, nextLevel: () => nextLevel() };
 (async function init() {
   resize();
   const names = [
-    "player", "sword", "scythe", "gun", "bomb", "explosion", "shield", "health",
+    "player", "sword", "gun", "bomb", "explosion", "shield", "health",
     "chest", "food", "flower", "freeze", "bullet", "firball", "xp", "tornado",
-    "portal_frame", "portal_swirl", "enemy_projectile",
+    "rock", "tree", "portal_frame", "portal_swirl", "enemy_projectile",
     "small_enemy", "normal_enemy", "big_enemy", "boss", "slime_enemy", "lizard_enemy",
     "spider_enemy", "ghost_enemy", "golem_enemy", "shooting_enemy", "dino_enemy",
     "demon_enemy", "fish_enemy", "creature_enemy", "devourer_enemy", "robot_enemy",
   ];
   const imgs = await Promise.all(names.map((n) => loadImage(`assets/${n}.png`)));
   names.forEach((n, i) => (S[n] = imgs[i]));
-  S.fireball = await loadImage("assets/fireball.gif");
 
   // czerwone sylwetki wszystkich typów wrogów
   for (const key in ENEMY_TYPES) SR[key] = makeTint(S[ENEMY_TYPES[key].sprite], "#ff3b3b");
