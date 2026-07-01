@@ -15,8 +15,9 @@
       <div class="hud-row">
         <div class="hud-item">⏱️ <span id="time">0.0</span>s</div>
         <div class="hud-item">💀 <span id="kills">0</span></div>
-        <div class="hud-item">🌊 Fala <span id="wave">1</span></div>
-        <div class="hud-item">⭐ Lvl <span id="level">1</span></div>
+        <div class="hud-item">🗺️ Poziom <span id="glevel">1</span></div>
+        <div class="hud-item">🌊 Fala <span id="wave">1</span>/<span id="waveMax">3</span></div>
+        <div class="hud-item">⭐ <span id="level">1</span></div>
       </div>
       <div id="healthbar"><div id="healthfill"></div></div>
       <div id="xpbar"><div id="xpfill"></div></div>
@@ -31,12 +32,14 @@
     <div id="start" class="overlay">
       <h1>⚔️ Arena Survivor</h1>
       <p class="desc">
-        Przetrwaj jak najdłużej! Twój miecz tnie automatycznie —
-        Ty tylko unikaj zombie.
+        Przetrwaj fale wrogów! Twoja broń tnie automatycznie — Ty unikaj wrogów,
+        zbieraj doświadczenie i wybieraj ulepszenia. Po zaliczeniu wszystkich fal
+        otworzy się <strong>portal</strong> do następnego poziomu.
       </p>
       <p class="controls">
         <strong>Komputer:</strong> WASD / strzałki<br />
-        <strong>Telefon:</strong> joystick po lewej stronie ekranu
+        <strong>Telefon:</strong> dotknij i przytrzymaj, aby sterować<br />
+        ⚠️ Uważaj na różowe kwiaty — wybuchają!
       </p>
       <button id="startBtn" class="btn">Graj</button>
     </div>

@@ -94,42 +94,78 @@ html, body {
   transition: width 0.1s ease;
 }
 
+/* Ekran level up */
+#levelup h1 {
+  background: linear-gradient(90deg, #a78bfa, #38bdf8, #a78bfa);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 3s linear infinite, popIn 0.4s ease;
+}
+@keyframes shine {
+  to { background-position: 200% center; }
+}
+@keyframes popIn {
+  from { transform: scale(0.7); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* Karty ulepszeń */
 .cards-choice {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
 }
 
 .upgrade-card {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.25rem;
-  background: #1e293b;
+  padding: 0.9rem 1.1rem;
+  background: linear-gradient(135deg, #1e293b, #263449);
   border: 2px solid rgba(148, 163, 184, 0.25);
   border-radius: 1rem;
   cursor: pointer;
   text-align: left;
   color: var(--text);
-  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  opacity: 0;
+  animation: cardIn 0.35s ease forwards;
+}
+@keyframes cardIn {
+  from { transform: translateY(18px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .upgrade-card:hover,
 .upgrade-card:active {
   border-color: var(--accent);
-  background: #24344a;
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 28px rgba(56, 189, 248, 0.25);
 }
 
-.upgrade-card img {
-  width: 46px;
-  height: 46px;
-  image-rendering: pixelated;
+.upgrade-card .u-icon {
+  width: 54px;
+  height: 54px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 0.7rem;
+  border: 1px solid rgba(56, 189, 248, 0.2);
 }
+
+.upgrade-card .u-icon img {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+}
+
+.upgrade-card .u-body { flex: 1; }
 
 .upgrade-card .u-title {
   font-size: 1.1rem;
@@ -137,16 +173,30 @@ html, body {
 }
 
 .upgrade-card .u-desc {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: #94a3b8;
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
 }
 
 .upgrade-card .u-lvl {
-  margin-left: auto;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--accent);
   font-weight: 700;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+
+.upgrade-card .u-lvl.u-new {
+  color: #fde047;
+  background: rgba(253, 224, 71, 0.14);
+}
+
+.overlay { animation: fadeIn 0.25s ease; }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Joystick */
